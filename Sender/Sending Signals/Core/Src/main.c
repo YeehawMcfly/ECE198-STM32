@@ -2,135 +2,140 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
+  * @brief          : Main program body with encryption
   ******************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stdio.h"
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
-/* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
+#include "string.h"
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
-/* USER CODE BEGIN PFP */
+void encrypt(uint32_t v[2], const uint32_t k[4]);
+void decrypt(uint32_t v[2], const uint32_t k[4]);
+void encryptMessage(uint8_t* input, size_t len);
+void decryptMessage(uint8_t* input, size_t len);
 
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-uint8_t RxData[30];
+/* USER CODE BEGIN PV */
+uint8_t RxData[32];  // Increased buffer size to accommodate encrypted data
 int indx = 0;
-uint8_t TxData[25];
+uint8_t TxData[32];  // Increased buffer size
 int isClicked = 0;
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size){
-	HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 30);
+// Encryption key - should be same on both devices
+const uint32_t key[4] = { 1, 2, 3, 4 };
+
+// Buffer for encryption/decryption operations
+uint32_t data_buffer[4];
+
+/* USER CODE BEGIN PV */
+
+void encrypt(uint32_t v[2], const uint32_t k[4]) {
+    uint32_t v0=v[0], v1=v[1], sum=0, i;
+    uint32_t delta=0x9E3779B9;
+    uint32_t k0=k[0], k1=k[1], k2=k[2], k3=k[3];
+    for (i=0; i<32; i++) {
+        sum += delta;
+        v0 += ((v1<<4) + k0) ^ (v1 + sum) ^ ((v1>>5) + k1);
+        v1 += ((v0<<4) + k2) ^ (v0 + sum) ^ ((v0>>5) + k3);
+    }
+    v[0]=v0; v[1]=v1;
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-	if (GPIO_Pin == GPIO_PIN_13){
-		if (isClicked == 0){
-			isClicked = 1;
-		}
-	}
+void decrypt(uint32_t v[2], const uint32_t k[4]) {
+    uint32_t v0=v[0], v1=v[1], sum=0xC6EF3720, i;
+    uint32_t delta=0x9E3779B9;
+    uint32_t k0=k[0], k1=k[1], k2=k[2], k3=k[3];
+    for (i=0; i<32; i++) {
+        v1 -= ((v0<<4) + k2) ^ (v0 + sum) ^ ((v0>>5) + k3);
+        v0 -= ((v1<<4) + k0) ^ (v1 + sum) ^ ((v1>>5) + k1);
+        sum -= delta;
+    }
+    v[0]=v0; v[1]=v1;
 }
 
-/* USER CODE END 0 */
+void encryptMessage(uint8_t* input, size_t len) {
+    // Clear the buffer first
+    memset(data_buffer, 0, sizeof(data_buffer));
 
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+    // Copy input data to buffer
+    memcpy(data_buffer, input, len);
 
-  /* USER CODE BEGIN 1 */
+    // Encrypt in blocks of 8 bytes (2 uint32_t)
+    for (int i = 0; i < 4; i += 2) {
+        encrypt(&data_buffer[i], key);
+    }
 
-  /* USER CODE END 1 */
+    // Copy back to input buffer
+    memcpy(input, data_buffer, sizeof(data_buffer));
+}
 
-  /* MCU Configuration--------------------------------------------------------*/
+void decryptMessage(uint8_t* input, size_t len) {
+    // Copy input to buffer
+    memcpy(data_buffer, input, len);
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    // Decrypt in blocks of 8 bytes
+    for (int i = 0; i < 4; i += 2) {
+        decrypt(&data_buffer[i], key);
+    }
 
-  /* USER CODE BEGIN Init */
+    // Copy back to input buffer
+    memcpy(input, data_buffer, sizeof(data_buffer));
+}
 
-  /* USER CODE END Init */
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+    if (Size > 0) {
+        // Decrypt the received data
+        decryptMessage(RxData, Size);
+        // Re-enable reception
+        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+    }
+}
 
-  /* Configure the system clock */
-  SystemClock_Config();
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == GPIO_PIN_13) {
+        if (isClicked == 0) {
+            isClicked = 1;
+        }
+    }
+}
 
-  /* USER CODE BEGIN SysInit */
+int main(void) {
+    /* Standard initialization code remains the same until while(1) loop */
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_USART1_UART_Init();
 
-  /* USER CODE END SysInit */
+    HAL_HalfDuplex_EnableReceiver(&huart1);
+    HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_USART1_UART_Init();
-  /* USER CODE BEGIN 2 */
-  HAL_HalfDuplex_EnableReceiver(&huart1);
+    while (1) {
+        if (isClicked == 1) {
+            HAL_Delay(500);
+            indx++;
 
-  HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 30);
+            // Prepare message
+            int len = sprintf((char*)TxData, "Hello From f401--%d", indx);
 
-  /* USER CODE END 2 */
+            // Encrypt the message
+            encryptMessage(TxData, 32);  // Use full buffer size for encryption
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
+            // Send encrypted data
+            HAL_HalfDuplex_EnableTransmitter(&huart1);
+            HAL_UART_Transmit(&huart1, TxData, 32, 1000);  // Send full buffer
+            HAL_HalfDuplex_EnableReceiver(&huart1);
 
-    /* USER CODE BEGIN 3 */
-	  if (isClicked == 1){
-		  HAL_Delay(500);
-		  indx++;
-		  int len = sprintf ((char*)TxData, "Hello From f401--%d", indx);
-		  HAL_HalfDuplex_EnableTransmitter(&huart1);
-		  HAL_UART_Transmit(&huart1, TxData, len, 1000);
-		  HAL_HalfDuplex_EnableReceiver(&huart1);
-		  isClicked = 0;
-	  }
-  }
-  /* USER CODE END 3 */
+            isClicked = 0;
+        }
+    }
 }
 
 /**
