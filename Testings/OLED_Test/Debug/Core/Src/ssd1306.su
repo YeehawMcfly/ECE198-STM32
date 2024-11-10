@@ -26,3 +26,5 @@
 ../Core/Src/ssd1306.c:630:6:ssd1306_I2C_Init	16	static
 ../Core/Src/ssd1306.c:642:6:ssd1306_I2C_WriteMulti	296	static
 ../Core/Src/ssd1306.c:652:6:ssd1306_I2C_Write	32	static
+../Core/Src/ssd1306.c:659:6:SSD1306_ShiftBufferLeft	16	static
+../Core/Src/ssd1306.c:668:6:SSD1306_DrawVerticalLineInRightmostColumn	24	static
