@@ -14,6 +14,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
 
+// Encryption and Decryption Function Prototypes
 void encrypt(uint32_t v[2], const uint32_t k[4]);
 void decrypt(uint32_t v[2], const uint32_t k[4]);
 void encryptMessage(uint8_t* input, size_t len);
@@ -23,6 +24,7 @@ void decryptMessage(uint8_t* input, size_t len);
 uint8_t RxData[8];
 uint8_t RxData_Encrypted[8];  // New buffer for encrypted data
 uint8_t yPos = 0;
+uint8_t prevYPos = 0;
 char msg[50];
 volatile uint8_t dataReceived = 0;
 
@@ -82,46 +84,41 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        // Format and transmit debug message
+        // Format and transmit decrypted yPos value
         sprintf(msg, "yPos: %u\r\n", yPos);
 
         // Switch to transmit mode for debug output
         HAL_HalfDuplex_EnableTransmitter(&huart1);
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
         HAL_HalfDuplex_EnableReceiver(&huart1);
+
+        // Update OLED Display with decrypted yPos
+        SSD1306_ShiftBufferLeft();
+        SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+        SSD1306_UpdateScreen();
+        prevYPos = yPos;
     }
 }
 
 
 int main(void)
 {
+  HAL_Init();
+  SystemClock_Config();
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_USART1_UART_Init();
 
-    // Initialize the Hardware Abstraction Layer
-    HAL_Init();
-
-    // Configure the system clock
-    SystemClock_Config();
-
-    // Initialize all configured peripherals
-    MX_GPIO_Init();
-    MX_I2C1_Init();
-    MX_USART1_UART_Init();
-
-    // Initialize UART Reception in Half-Duplex Mode
-    HAL_HalfDuplex_EnableReceiver(&huart1);
-    HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
+  HAL_HalfDuplex_EnableReceiver(&huart1);
+  HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
 
-
+  /* USER CODE BEGIN 2 */
   SSD1306_Init();
-  SSD1306_GotoXY (0,0);
-  SSD1306_Puts ("MICROPETA", &Font_11x18, 1);
-  HAL_Delay(5000);
+  SSD1306_Clear();
+  SSD1306_UpdateScreen();
 
-  /* USER CODE END 2 */
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   while(1) {
           if (dataReceived) {
               // Process received data if needed
@@ -131,7 +128,7 @@ int main(void)
               HAL_Delay(10);
           }
       }
-  /* USER CODE END 3 */
+
 }
 
 static void MX_USART1_UART_Init(void) {
@@ -148,8 +145,6 @@ static void MX_USART1_UART_Init(void) {
         Error_Handler();
     }
 }
-
-
 
 
 static void MX_GPIO_Init(void)
