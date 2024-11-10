@@ -7,47 +7,15 @@ UART_HandleTypeDef huart1;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
-// void decrypt(uint32_t v[2], const uint32_t k[4]);
-// void decryptMessage(uint8_t* input, size_t len);
 
-uint8_t RxData[8];
-const uint32_t key[4] = {1, 2, 3, 4};
-uint32_t data_buffer[2];
+uint8_t RxData[1];
+uint8_t yPos = 0;
 char msg[50];
-
-/*
-void decrypt(uint32_t v[2], const uint32_t k[4]){
-    uint32_t v0 = v[0], v1 = v[1], sum = 0xC6EF3720, i;
-    uint32_t delta = 0x9E3779B9;
-    for(i=0;i<32;i++){
-        v1 -= ((v0<<4)+k[2]) ^ (v0 + sum) ^ ((v0>>5)+k[3]);
-        v0 -= ((v1<<4)+k[0]) ^ (v1 + sum) ^ ((v1>>5)+k[1]);
-        sum -= delta;
-    }
-    v[0]=v0; v[1]=v1;
-}
-
-void decryptMessage(uint8_t* input, size_t len){
-    memcpy(data_buffer, input, len);
-    int blocks = (len +7)/8;
-    for(int i=0;i < blocks*2;i+=2){
-        decrypt(&data_buffer[i], key);
-    }
-    memcpy(input, data_buffer, len);
-}
-*/
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size){
     if(Size >0){
-        // decryptMessage(RxData, Size);
-        // Removed decryption
-
-        memcpy(data_buffer, RxData, sizeof(RxData));
-
-        uint16_t adcValue = (uint16_t)(data_buffer[0] & 0xFFFF);
-        uint32_t counter = data_buffer[1];
-        float voltage = (adcValue * 3.3f)/4095.0f;
-        sprintf(msg, "ADC Value: %u, Voltage: %.2f V, Counter: %lu\r\n", adcValue, voltage, counter);
+        yPos = RxData[0];
+        sprintf(msg, "yPos: %u\r\n", yPos);
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
     }

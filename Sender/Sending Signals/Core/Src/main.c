@@ -12,13 +12,8 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
-// void encrypt(uint32_t v[2], const uint32_t k[4]);
 
-const uint32_t key[4] = {1, 2, 3, 4};
-uint8_t TxData[8];
-uint32_t data_buffer[2];
-uint32_t counter = 0;
-uint16_t adcValue = 0;
+uint8_t TxData[1];
 uint8_t yPos = 0;
 uint8_t prevYPos = 0;
 
@@ -33,45 +28,23 @@ int main(void){
 
     HAL_ADC_Start(&hadc1);
     HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-    adcValue = HAL_ADC_GetValue(&hadc1);
-    yPos = SSD1306_HEIGHT -1 - ((adcValue * (SSD1306_HEIGHT -1)) / 4095);
+    yPos = SSD1306_HEIGHT -1 - ((HAL_ADC_GetValue(&hadc1) * (SSD1306_HEIGHT -1)) / 4095);
     prevYPos = yPos;
 
     while(1){
         HAL_ADC_Start(&hadc1);
         HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-        adcValue = HAL_ADC_GetValue(&hadc1);
-
-        yPos = SSD1306_HEIGHT -1 - ((adcValue * (SSD1306_HEIGHT -1)) / 4095);
+        yPos = SSD1306_HEIGHT -1 - ((HAL_ADC_GetValue(&hadc1) * (SSD1306_HEIGHT -1)) / 4095);
         SSD1306_ShiftBufferLeft();
         SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
         SSD1306_UpdateScreen();
         prevYPos = yPos;
 
-        data_buffer[0] = (uint32_t)adcValue;
-        data_buffer[1] = counter++;
-
-        // encrypt(data_buffer, key);
-
-        memcpy(TxData, data_buffer, sizeof(data_buffer));
+        TxData[0] = yPos;
         HAL_UART_Transmit(&huart1, TxData, sizeof(TxData), 1000);
         HAL_Delay(50);
     }
 }
-
-/*
-void encrypt(uint32_t v[2], const uint32_t k[4]){
-    uint32_t v0 = v[0], v1 = v[1], sum = 0, i;
-    uint32_t delta = 0x9E3779B9;
-    for(i = 0; i < 32; i++){
-        sum += delta;
-        v0 += ((v1<<4) + k[0]) ^ (v1 + sum) ^ ((v1>>5) + k[1]);
-        v1 += ((v0<<4) + k[2]) ^ (v0 + sum) ^ ((v0>>5) + k[3]);
-    }
-    v[0] = v0;
-    v[1] = v1;
-}
-*/
 
 static void MX_USART1_UART_Init(void){
     huart1.Instance = USART1;
