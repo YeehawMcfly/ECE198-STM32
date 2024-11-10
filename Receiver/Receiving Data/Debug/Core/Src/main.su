@@ -1,5 +1,9 @@
-../Core/Src/main.c:17:5:main	40	static
-../Core/Src/main.c:94:13:MX_GPIO_Init	16	static
-../Core/Src/main.c:106:13:MX_I2C1_Init	8	static
-../Core/Src/main.c:135:6:SystemClock_Config	88	static
-../Core/Src/main.c:169:6:Error_Handler	8	static
+../Core/Src/main.c:36:6:decrypt	56	static
+../Core/Src/main.c:50:6:decryptMessage	24	static
+../Core/Src/main.c:70:6:HAL_UARTEx_RxEventCallback	16	static
+../Core/Src/main.c:96:5:main	8	static
+../Core/Src/main.c:137:13:MX_USART1_UART_Init	8	static
+../Core/Src/main.c:155:13:MX_GPIO_Init	16	static
+../Core/Src/main.c:167:13:MX_I2C1_Init	8	static
+../Core/Src/main.c:196:6:SystemClock_Config	88	static
+../Core/Src/main.c:230:6:Error_Handler	8	static
