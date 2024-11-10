@@ -1,224 +1,126 @@
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body with encryption
-  ******************************************************************************
-  */
-/* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include <stdio.h>
 #include <string.h>
 
 UART_HandleTypeDef huart1;
-volatile uint8_t uart_rx_ready = 0;
-volatile HAL_StatusTypeDef uart_status = HAL_OK;
 
-/* Variables */
-uint8_t RxData[8]; // Buffer to receive encrypted data
-const uint32_t key[4] = { 1, 2, 3, 4 };
-uint32_t data_buffer[2]; // Buffer for decrypted data
-char msg[50]; // Message buffer for UART transmission
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART1_UART_Init(void);
+void decrypt(uint32_t v[2], const uint32_t k[4]);
+void decryptMessage(uint8_t* input, size_t len);
 
-/* UART Receive Complete Callback */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    if (huart->Instance == USART1) {
-        uart_rx_ready = 1;
+uint8_t RxData[8];
+const uint32_t key[4] = {1, 2, 3, 4};
+uint32_t data_buffer[2];
+char msg[50];
 
-        // Copy received data to data_buffer
-        memcpy(data_buffer, RxData, sizeof(RxData));
+void decrypt(uint32_t v[2], const uint32_t k[4]){
+    uint32_t v0 = v[0], v1 = v[1], sum = 0xC6EF3720, i;
+    uint32_t delta = 0x9E3779B9;
+    for(i=0;i<32;i++){
+        v1 -= ((v0<<4)+k[2]) ^ (v0 + sum) ^ ((v0>>5)+k[3]);
+        v0 -= ((v1<<4)+k[0]) ^ (v1 + sum) ^ ((v1>>5)+k[1]);
+        sum -= delta;
+    }
+    v[0]=v0; v[1]=v1;
+}
 
-        // Decrypt the data
-        decrypt(data_buffer, key);
+void decryptMessage(uint8_t* input, size_t len){
+    memcpy(data_buffer, input, len);
+    int blocks = (len +7)/8;
+    for(int i=0;i < blocks*2;i+=2){
+        decrypt(&data_buffer[i], key);
+    }
+    memcpy(input, data_buffer, len);
+}
 
-        // Extract adcValue and counter
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size){
+    if(Size >0){
+        decryptMessage(RxData, Size);
+        if(Size < sizeof(RxData)){
+            RxData[Size] = '\0';
+        }
+        else{
+            RxData[sizeof(RxData)-1] = '\0';
+        }
         uint16_t adcValue = (uint16_t)(data_buffer[0] & 0xFFFF);
         uint32_t counter = data_buffer[1];
-
-        // Debug: Print raw received values
-        sprintf(msg, "Raw: 0x%08lx 0x%08lx\r\n", data_buffer[0], data_buffer[1]);
-        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-
-        // Convert adcValue to voltage
-        float voltage = (adcValue * 3.3f) / 4095.0f;
-
-        // Prepare message to print
-        sprintf(msg, "ADC: %u, V: %.2f, Cnt: %lu\r\n", adcValue, voltage, counter);
-        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-
-        // Re-enable reception
-        uart_status = HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
-        if(uart_status != HAL_OK) {
-            sprintf(msg, "UART Re-enable failed: %d\r\n", uart_status);
-            HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-        }
+        float voltage = (adcValue * 3.3f)/4095.0f;
+        sprintf(msg, "ADC Value: %u, Voltage: %.2f V, Counter: %lu\r\n", adcValue, voltage, counter);
+        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
     }
 }
 
-/* UART Error Callback */
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
-{
-    if (huart->Instance == USART1)
-    {
-        // Get error flags
-        uint32_t error = HAL_UART_GetError(huart);
-
-        // Prepare error message
-        sprintf(msg, "UART Error: 0x%lx\r\n", error);
-        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-
-        // Re-enable reception
-        uart_status = HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
-    }
-}
-
-int main(void) {
+int main(void){
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
     MX_USART1_UART_Init();
-
-    // Initial message
-    sprintf(msg, "STM32 UART Receiver Started\r\n");
-    HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-
-    // Enable receiver
-    uart_status = HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
-    if(uart_status != HAL_OK) {
-        sprintf(msg, "Initial UART enable failed: %d\r\n", uart_status);
-        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-    }
-
-    while (1) {
-        // Main loop can monitor uart_rx_ready flag if needed
-        HAL_Delay(100);  // Add small delay to prevent tight loop
-    }
+    HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
+    while(1){}
 }
 
-/* USART1 Initialization Function */
-static void MX_USART1_UART_Init(void) {
+static void MX_USART1_UART_Init(void){
     huart1.Instance = USART1;
-    huart1.Init.BaudRate = 115200;               // Match transmitter's baud rate
+    huart1.Init.BaudRate = 115200;
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
     huart1.Init.StopBits = UART_STOPBITS_1;
     huart1.Init.Parity = UART_PARITY_NONE;
-    huart1.Init.Mode = UART_MODE_RX;             // Receive only
+    huart1.Init.Mode = UART_MODE_RX;
     huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-    if (HAL_UART_Init(&huart1) != HAL_OK) {
+    if(HAL_UART_Init(&huart1)!= HAL_OK){
         Error_Handler();
     }
 }
 
-
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
-
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 84;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 4;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
+static void MX_GPIO_Init(void){
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOH_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    GPIO_InitStruct.Pin = GPIO_PIN_13;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn,0,0);
+    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-
-  /*Configure GPIO pin : PC13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
+void SystemClock_Config(void){
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+    __HAL_RCC_PWR_CLK_ENABLE();
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PLLM = 4;
+    RCC_OscInitStruct.PLL.PLLN = 84;
+    RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ = 4;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct)!= HAL_OK){
+        Error_Handler();
+    }
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK| RCC_CLOCKTYPE_SYSCLK
+                                  | RCC_CLOCKTYPE_PCLK1| RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+    if(HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2)!= HAL_OK){
+        Error_Handler();
+    }
 }
 
-/* USER CODE BEGIN 4 */
-
-/* USER CODE END 4 */
-
-/**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
+void Error_Handler(void){
+    __disable_irq();
+    while(1){}
 }
 
-#ifdef  USE_FULL_ASSERT
-/**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
-}
-#endif /* USE_FULL_ASSERT */
+#ifdef USE_FULL_ASSERT
+void assert_failed(uint8_t *file, uint32_t line){}
+#endif
