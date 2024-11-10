@@ -3,40 +3,118 @@
 #include "ssd1306.h"
 #include <string.h>
 
+// Peripheral Handles
 ADC_HandleTypeDef hadc1;
 I2C_HandleTypeDef hi2c1;
 UART_HandleTypeDef huart1;
 
+// Function Prototypes
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
 
-// Increase buffer size and add proper padding
+// Encryption and Decryption Function Prototypes
+void encrypt(uint32_t v[2], const uint32_t k[4]);
+void decrypt(uint32_t v[2], const uint32_t k[4]);
+void encryptMessage(uint8_t* input, size_t len);
+void decryptMessage(uint8_t* input, size_t len);
+
+// Global Variables
+// TxData and RxData are 8 bytes to match the encryption block size
 uint8_t TxData[8] = {0};
-uint8_t RxData[8] = {0};
 uint8_t yPos = 0;
 uint8_t prevYPos = 0;
 volatile uint8_t transmissionComplete = 1;
 
+// Encryption key - must be the same on both sender and receiver
+const uint32_t key[4] = {1, 2, 3, 4};
+
+// Buffer for encryption/decryption operations (2 uint32_t for 8 bytes)
+uint32_t data_buffer[2];
+
+// Transmission Complete Callback
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart == &huart1) {
         transmissionComplete = 1;
     }
 }
 
+// Encryption Function
+void encrypt(uint32_t v[2], const uint32_t k[4]) {
+    uint32_t v0 = v[0], v1 = v[1], sum = 0, i;
+    uint32_t delta = 0x9E3779B9;
+    uint32_t k0 = k[0], k1 = k[1], k2 = k[2], k3 = k[3];
+    for (i = 0; i < 32; i++) {
+        sum += delta;
+        v0 += ((v1 << 4) + k0) ^ (v1 + sum) ^ ((v1 >> 5) + k1);
+        v1 += ((v0 << 4) + k2) ^ (v0 + sum) ^ ((v0 >> 5) + k3);
+    }
+    v[0] = v0;
+    v[1] = v1;
+}
+
+// Decryption Function
+void decrypt(uint32_t v[2], const uint32_t k[4]) {
+    uint32_t v0 = v[0], v1 = v[1], sum = 0xC6EF3720, i;
+    uint32_t delta = 0x9E3779B9;
+    uint32_t k0 = k[0], k1 = k[1], k2 = k[2], k3 = k[3];
+    for (i = 0; i < 32; i++) {
+        v1 -= ((v0 << 4) + k2) ^ (v0 + sum) ^ ((v0 >> 5) + k3);
+        v0 -= ((v1 << 4) + k0) ^ (v1 + sum) ^ ((v1 >> 5) + k1);
+        sum -= delta;
+    }
+    v[0] = v0;
+    v[1] = v1;
+}
+
+// Encrypt Message Function
+void encryptMessage(uint8_t* input, size_t len) {
+    // Ensure len is a multiple of 8
+    if (len % 8 != 0) {
+        // Handle padding if necessary
+        memset(input + len, 0, 8 - (len % 8));
+        len += 8 - (len % 8);
+    }
+
+    // Clear the buffer first
+    memset(data_buffer, 0, sizeof(data_buffer));
+
+    // Copy input data to buffer as uint32_t
+    memcpy(data_buffer, input, len);
+
+    // Encrypt in blocks of 8 bytes (2 uint32_t)
+    for (int i = 0; i < (len / 4); i += 2) {
+        encrypt(&data_buffer[i], key);
+    }
+
+    // Copy back to input buffer
+    memcpy(input, data_buffer, len);
+}
+
+// Decrypt Message Function (Not used in Sender)
+void decryptMessage(uint8_t* input, size_t len) {
+    // Sender does not decrypt, so this can remain empty or be removed
+}
+
 int main(void) {
+    // Initialize the Hardware Abstraction Layer
     HAL_Init();
+
+    // Configure the system clock
     SystemClock_Config();
+
+    // Initialize all configured peripherals
     MX_GPIO_Init();
     MX_I2C1_Init();
     MX_ADC1_Init();
     MX_USART1_UART_Init();
 
+    // Initialize the SSD1306 OLED display
     SSD1306_Init();
 
-    // Initial ADC reading
+    // Perform an initial ADC conversion to set yPos and prevYPos
     HAL_ADC_Start(&hadc1);
     if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
         uint16_t adcValue = HAL_ADC_GetValue(&hadc1);
@@ -46,10 +124,14 @@ int main(void) {
 
     while(1) {
         if (transmissionComplete) {
+            // Start ADC Conversion
             HAL_ADC_Start(&hadc1);
 
+            // Poll for ADC Conversion completion
             if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
                 uint16_t adcValue = HAL_ADC_GetValue(&hadc1);
+
+                // Calculate yPos based on ADC value
                 yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
 
                 // Update OLED Display
@@ -62,23 +144,20 @@ int main(void) {
                 memset(TxData, 0, sizeof(TxData));
                 TxData[0] = yPos;
 
+                // Encrypt the TxData before transmission
+                encryptMessage(TxData, sizeof(TxData));
+
                 // Switch to transmit mode and send data
                 HAL_HalfDuplex_EnableTransmitter(&huart1);
                 transmissionComplete = 0;
                 HAL_UART_Transmit_IT(&huart1, TxData, sizeof(TxData));
 
-                // Wait for transmission to complete
-                while (!transmissionComplete) {
-                    // Could add a timeout here if needed
-                }
-
-                // Switch back to receive mode
-                HAL_HalfDuplex_EnableReceiver(&huart1);
-
-                // Add delay between transmissions
-                HAL_Delay(50);
+                // No need to wait here; the callback will set transmissionComplete
             }
         }
+
+        // Optionally, add other tasks or put the MCU to sleep to save power
+        HAL_Delay(1); // Minimal delay to prevent watchdog reset if enabled
     }
 }
 
@@ -88,7 +167,7 @@ static void MX_USART1_UART_Init(void) {
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
     huart1.Init.StopBits = UART_STOPBITS_1;
     huart1.Init.Parity = UART_PARITY_NONE;
-    huart1.Init.Mode = UART_MODE_TX_RX;
+    huart1.Init.Mode = UART_MODE_TX_RX; // Enable both TX and RX for Half-Duplex
     huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
 
