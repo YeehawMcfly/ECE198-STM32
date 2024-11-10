@@ -18,6 +18,7 @@ void decryptMessage(uint8_t* input, size_t len);
 
 // Global Variables
 uint8_t RxData[8];
+uint8_t RxData_Encrypted[8];  // New buffer for encrypted data
 uint8_t yPos = 0;
 char msg[50];
 volatile uint8_t dataReceived = 0;
@@ -27,22 +28,6 @@ const uint32_t key[4] = {1, 2, 3, 4};
 
 // Buffer for encryption/decryption operations (2 uint32_t for 8 bytes)
 uint32_t data_buffer[2];
-
-/**
- * @brief Converts binary data to a hexadecimal string.
- *
- * @param bin Pointer to the binary data.
- * @param len Length of the binary data.
- * @param hex_out Pointer to the output buffer (must be at least len*2 + 1 bytes).
- */
-void bin_to_hex(uint8_t* bin, size_t len, char* hex_out) {
-    const char hex_chars[] = "0123456789ABCDEF";
-    for (size_t i = 0; i < len; i++) {
-        hex_out[i * 2] = hex_chars[(bin[i] >> 4) & 0x0F];
-        hex_out[i * 2 + 1] = hex_chars[bin[i] & 0x0F];
-    }
-    hex_out[len * 2] = '\0'; // Null-terminate the string
-}
 
 // Decryption Function
 void decrypt(uint32_t v[2], const uint32_t k[4]) {
@@ -81,29 +66,20 @@ void decryptMessage(uint8_t* input, size_t len) {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart == &huart1 && Size > 0) {
-        // Step 1: Convert Encrypted RxData to Hexadecimal String
-        char encrypted_hex[17]; // 8 bytes * 2 chars + 1 null terminator
-        bin_to_hex(RxData, 8, encrypted_hex); // Assuming TxData is 8 bytes
+        // Store encrypted data first
+        memcpy(RxData_Encrypted, RxData, sizeof(RxData));
 
-        // Step 2: Format and Transmit Encrypted Data
-        sprintf(msg, "Encrypted Data: %s\r\n", encrypted_hex);
-
-        // Switch to transmit mode to send the encrypted data
-        HAL_HalfDuplex_EnableTransmitter(&huart1);
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-        HAL_HalfDuplex_EnableReceiver(&huart1);
-
-        // Step 3: Decrypt the received data
+        // Decrypt the received data
         decryptMessage(RxData, sizeof(RxData));
 
         // Extract yPos from decrypted data
         yPos = RxData[0];
         dataReceived = 1;
 
-        // Re-enable reception for the next incoming data
+        // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        // Step 4: Format and transmit the decrypted yPos value
+        // Format and transmit debug message
         sprintf(msg, "yPos: %u\r\n", yPos);
 
         // Switch to transmit mode for debug output
@@ -136,8 +112,6 @@ int main(void) {
             // Optional: Add a small delay to prevent overwhelming the UART
             HAL_Delay(10);
         }
-
-        // Optional: Implement low-power modes or other tasks
     }
 }
 
@@ -158,8 +132,6 @@ static void MX_USART1_UART_Init(void) {
 
 static void MX_GPIO_Init(void){
     GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-    // Enable GPIO Ports Clock
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOH_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
