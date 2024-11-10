@@ -70,23 +70,16 @@ void decryptMessage(uint8_t* input, size_t len) {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart == &huart1 && Size > 0) {
-        // Store encrypted data first
         memcpy(RxData_Encrypted, RxData, sizeof(RxData));
-
-        // Decrypt the received data
         decryptMessage(RxData, sizeof(RxData));
-
-        // Extract yPos from decrypted data
         yPos = RxData[0];
-        dataReceived = 1; // Set flag
+        dataReceived = 1;  // Set flag only
 
-        // Re-enable reception before processing
+        // Re-enable reception immediately
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        // Format and transmit debug message
+        // Debug output
         sprintf(msg, "yPos: %u\r\n", yPos);
-
-        // Switch to transmit mode for debug output
         HAL_HalfDuplex_EnableTransmitter(&huart1);
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
         HAL_HalfDuplex_EnableReceiver(&huart1);
@@ -118,19 +111,17 @@ int main(void) {
     HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
     while(1) {
-		if (dataReceived) {
-			dataReceived = 0; // Reset flag
+        if (dataReceived) {
+            // Update display here instead of in interrupt
+            SSD1306_ShiftBufferLeft();
+            SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+            SSD1306_UpdateScreen();
+            prevYPos = yPos;
 
-			// Update OLED Display
-			SSD1306_ShiftBufferLeft();
-			SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-			SSD1306_UpdateScreen();
-			prevYPos = yPos;
-
-			// Optional: Add a small delay if necessary
-			HAL_Delay(10);
-		}
-	}
+            dataReceived = 0;
+            HAL_Delay(50);
+        }
+    }
 }
 
 static void MX_USART1_UART_Init(void) {
