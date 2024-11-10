@@ -78,13 +78,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
         // Extract yPos from decrypted data
         yPos = RxData[0];
-        dataReceived = 1;
-
-        // Update OLED Display
-        SSD1306_ShiftBufferLeft();
-        SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-        SSD1306_UpdateScreen();
-        prevYPos = yPos;
+        dataReceived = 1; // Set flag
 
         // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
@@ -98,6 +92,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         HAL_HalfDuplex_EnableReceiver(&huart1);
     }
 }
+
 
 int main(void) {
     // Initialize the Hardware Abstraction Layer
@@ -123,14 +118,19 @@ int main(void) {
     HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
     while(1) {
-        if (dataReceived) {
-            // Process received data if needed
-            dataReceived = 0;
+		if (dataReceived) {
+			dataReceived = 0; // Reset flag
 
-            // Optional: Add a small delay to prevent overwhelming the UART
-            HAL_Delay(10);
-        }
-    }
+			// Update OLED Display
+			SSD1306_ShiftBufferLeft();
+			SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+			SSD1306_UpdateScreen();
+			prevYPos = yPos;
+
+			// Optional: Add a small delay if necessary
+			HAL_Delay(10);
+		}
+	}
 }
 
 static void MX_USART1_UART_Init(void) {
