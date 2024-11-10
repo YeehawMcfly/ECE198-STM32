@@ -56,33 +56,39 @@ void decryptMessage(uint8_t* input, size_t len) {
         len -= len % 8;
     }
 
-    // Copy input to buffer as uint32_t
-    memcpy(data_buffer, input, len);
+    // Process each 8-byte block
+    for (size_t i = 0; i < len; i += 8) {
+        uint32_t v[2];
+        memcpy(&v, &input[i], sizeof(v));
 
-    // Decrypt in blocks of 8 bytes (2 uint32_t)
-    for (int i = 0; i < (len / 4); i += 2) {
-        decrypt(&data_buffer[i], key);
+        decrypt(v, key);
+
+        memcpy(&input[i], v, sizeof(v));
     }
-
-    // Copy back to input buffer
-    memcpy(input, data_buffer, len);
 }
+
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart == &huart1 && Size > 0) {
-        memcpy(RxData_Encrypted, RxData, sizeof(RxData));
-        decryptMessage(RxData, sizeof(RxData));
+        if (Size >= sizeof(RxData)) {
+            Size = sizeof(RxData);
+        }
+
+        // Store encrypted data first
+        memcpy(RxData_Encrypted, RxData, Size);
+
+        // Decrypt the received data
+        decryptMessage(RxData, Size);
+
+        // Extract yPos from decrypted data
         yPos = RxData[0];
         dataReceived = 1;  // Set flag only
 
         // Re-enable reception immediately
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        // Debug output
-        sprintf(msg, "yPos: %u\r\n", yPos);
-        HAL_HalfDuplex_EnableTransmitter(&huart1);
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-        HAL_HalfDuplex_EnableReceiver(&huart1);
+        // Remove UART transmission from here
+        // Instead, handle debug messages in the main loop
     }
 }
 
@@ -100,7 +106,17 @@ int main(void) {
     MX_USART1_UART_Init();
 
     // Initialize the OLED display
-    SSD1306_Init();  // Add this line
+    if (SSD1306_Init(&hi2c1) != 0) { // Modify SSD1306_Init to accept I2C handle if necessary
+            sprintf(msg, "OLED Init Failed\r\n");
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+            Error_Handler();
+	} else {
+		sprintf(msg, "OLED Init Success\r\n");
+		HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	}
+
+    // Scan for I2C devices
+    // I2C_Scan(); // Uncomment if you implemented the I2C_Scan function
 
     // Clear the display initially
     SSD1306_Clear();
@@ -112,16 +128,26 @@ int main(void) {
 
     while(1) {
         if (dataReceived) {
-            // Update display here instead of in interrupt
+            // Update OLED display
             SSD1306_ShiftBufferLeft();
             SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
             SSD1306_UpdateScreen();
             prevYPos = yPos;
 
+            // Send debug message
+            sprintf(msg, "yPos: %u\r\n", yPos);
+            HAL_HalfDuplex_EnableTransmitter(&huart1);
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 1000); // Use a reasonable timeout
+            HAL_HalfDuplex_EnableReceiver(&huart1);
+
             dataReceived = 0;
-            HAL_Delay(50);
         }
+
+        // Optional: Implement power-saving features or other tasks
+        HAL_Delay(50); // Minimal delay
     }
+
+
 }
 
 static void MX_USART1_UART_Init(void) {
@@ -141,9 +167,12 @@ static void MX_USART1_UART_Init(void) {
 
 static void MX_GPIO_Init(void){
     GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // Enable GPIO Ports Clock
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOH_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE(); // Enable GPIOB for I2C1
 
     // Configure PC13 as Input with External Interrupt
     GPIO_InitStruct.Pin = GPIO_PIN_13;
@@ -151,10 +180,19 @@ static void MX_GPIO_Init(void){
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
+    // Configure I2C1 SCL and SDA (Assuming PB6=SCL, PB7=SDA)
+    GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF4_I2C1; // AF4 for I2C1 on many STM32s
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
     // Set EXTI Line 15_10 Interrupt Priority and Enable it
     HAL_NVIC_SetPriority(EXTI15_10_IRQn,0,0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
+
 
 void SystemClock_Config(void){
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -190,9 +228,9 @@ void SystemClock_Config(void){
     }
 }
 
-static void MX_I2C1_Init(void) {
+static void MX_I2C1_Init(void){
     hi2c1.Instance = I2C1;
-    hi2c1.Init.ClockSpeed = 400000;
+    hi2c1.Init.ClockSpeed = 400000; // Set to 400 kHz for Fast Mode
     hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
     hi2c1.Init.OwnAddress1 = 0;
     hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -200,14 +238,21 @@ static void MX_I2C1_Init(void) {
     hi2c1.Init.OwnAddress2 = 0;
     hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
     hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-    if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
+    if (HAL_I2C_Init(&hi2c1) != HAL_OK){
         Error_Handler();
     }
+
+    // Configure analog and digital filters
+    HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE);
+    HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0);
 }
+
 
 void Error_Handler(void){
     __disable_irq();
-    while (1){}
+    while (1){
+        // Optional: Toggle an LED here to indicate error
+    }
 }
 
 #ifdef USE_FULL_ASSERT
