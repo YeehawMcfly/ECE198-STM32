@@ -1,14 +1,18 @@
 #include "main.h"
 #include <stdio.h>
+#include "fonts.h"
+#include "ssd1306.h"
 #include <string.h>
 
 // Peripheral Handles
 UART_HandleTypeDef huart1;
+I2C_HandleTypeDef hi2c1;
 
 // Function Prototypes
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_I2C1_Init(void);
 
 // Encryption and Decryption Function Prototypes
 void encrypt(uint32_t v[2], const uint32_t k[4]);
@@ -16,10 +20,10 @@ void decrypt(uint32_t v[2], const uint32_t k[4]);
 void encryptMessage(uint8_t* input, size_t len);
 void decryptMessage(uint8_t* input, size_t len);
 
-// Global Variables
 uint8_t RxData[8];
-uint8_t RxData_Encrypted[8];  // New buffer for encrypted data
+uint8_t RxData_Encrypted[8];
 uint8_t yPos = 0;
+uint8_t prevYPos = 0;  // Add this line
 char msg[50];
 volatile uint8_t dataReceived = 0;
 
@@ -66,28 +70,22 @@ void decryptMessage(uint8_t* input, size_t len) {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart == &huart1 && Size > 0) {
-        // Store encrypted data first
         memcpy(RxData_Encrypted, RxData, sizeof(RxData));
-
-        // Decrypt the received data
         decryptMessage(RxData, sizeof(RxData));
-
-        // Extract yPos from decrypted data
         yPos = RxData[0];
-        dataReceived = 1;
+        dataReceived = 1;  // Set flag only
 
-        // Re-enable reception before processing
+        // Re-enable reception immediately
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        // Format and transmit debug message
+        // Debug output
         sprintf(msg, "yPos: %u\r\n", yPos);
-
-        // Switch to transmit mode for debug output
         HAL_HalfDuplex_EnableTransmitter(&huart1);
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
         HAL_HalfDuplex_EnableReceiver(&huart1);
     }
 }
+
 
 int main(void) {
     // Initialize the Hardware Abstraction Layer
@@ -98,7 +96,15 @@ int main(void) {
 
     // Initialize all configured peripherals
     MX_GPIO_Init();
+    MX_I2C1_Init();  // Add this line
     MX_USART1_UART_Init();
+
+    // Initialize the OLED display
+    SSD1306_Init();  // Add this line
+
+    // Clear the display initially
+    SSD1306_Clear();
+    SSD1306_UpdateScreen();
 
     // Initialize UART Reception in Half-Duplex Mode
     HAL_HalfDuplex_EnableReceiver(&huart1);
@@ -106,11 +112,14 @@ int main(void) {
 
     while(1) {
         if (dataReceived) {
-            // Process received data if needed
-            dataReceived = 0;
+            // Update display here instead of in interrupt
+            SSD1306_ShiftBufferLeft();
+            SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+            SSD1306_UpdateScreen();
+            prevYPos = yPos;
 
-            // Optional: Add a small delay to prevent overwhelming the UART
-            HAL_Delay(10);
+            dataReceived = 0;
+            HAL_Delay(50);
         }
     }
 }
@@ -177,6 +186,21 @@ void SystemClock_Config(void){
     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2)!= HAL_OK){
+        Error_Handler();
+    }
+}
+
+static void MX_I2C1_Init(void) {
+    hi2c1.Instance = I2C1;
+    hi2c1.Init.ClockSpeed = 400000;
+    hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+    hi2c1.Init.OwnAddress1 = 0;
+    hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+    hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    hi2c1.Init.OwnAddress2 = 0;
+    hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+    if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
         Error_Handler();
     }
 }
