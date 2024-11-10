@@ -34,34 +34,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := Sending Signals
+BUILD_ARTIFACT_NAME := Sending Data
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-Sending\ Signals.elf \
+Sending\ Data.elf \
 
 MAP_FILES += \
-Sending\ Signals.map \
+Sending\ Data.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-Sending\ Signals.list \
+Sending\ Data.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: Sending\ Signals.elf secondary-outputs
+main-build: Sending\ Data.elf secondary-outputs
 
 # Tool invocations
-Sending\ Signals.elf Sending\ Signals.map: $(OBJS) $(USER_OBJS) C:\Users\Eugene\Desktop\ECE198-STM32\Sender\Sending\ Signals\STM32F401RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Sending Signals.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Eugene\Desktop\ECE198-STM32\Sender\Sending Signals\STM32F401RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Sending Signals.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Sending\ Data.elf Sending\ Data.map: $(OBJS) $(USER_OBJS) C:\Users\Eugene\Desktop\ECE198-STM32\Sender\Sending\ Signals\STM32F401RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Sending Data.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Eugene\Desktop\ECE198-STM32\Sender\Sending Signals\STM32F401RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Sending Data.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -70,14 +70,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-Sending\ Signals.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Sending Signals.list"
+Sending\ Data.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Sending Data.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) Sending\ Signals.elf Sending\ Signals.list Sending\ Signals.map Sending\\ Signals.elf default.size.stdout
+	-$(RM) Sending\ Data.elf Sending\ Data.list Sending\ Data.map Sending\\ Data.elf default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
