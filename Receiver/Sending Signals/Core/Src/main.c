@@ -12,34 +12,20 @@
 #include <string.h>
 
 UART_HandleTypeDef huart1;
-
-/* Function Prototypes */
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_USART1_UART_Init(void);
-void decrypt(uint32_t v[2], const uint32_t k[4]);
+volatile uint8_t uart_rx_ready = 0;
+volatile HAL_StatusTypeDef uart_status = HAL_OK;
 
 /* Variables */
-uint8_t RxData[8];          // Buffer to receive encrypted data
+uint8_t RxData[8]; // Buffer to receive encrypted data
 const uint32_t key[4] = { 1, 2, 3, 4 };
-uint32_t data_buffer[2];    // Buffer for decrypted data
-char msg[50];               // Message buffer for UART transmission
-
-/* Decryption Function */
-void decrypt(uint32_t v[2], const uint32_t k[4]) {
-    uint32_t v0=v[0], v1=v[1], sum=0xC6EF3720, i;
-    uint32_t delta=0x9E3779B9;
-    for (i=0; i<32; i++) {
-        v1 -= ((v0<<4) + k[2]) ^ (v0 + sum) ^ ((v0>>5) + k[3]);
-        v0 -= ((v1<<4) + k[0]) ^ (v1 + sum) ^ ((v1>>5) + k[1]);
-        sum -= delta;
-    }
-    v[0]=v0; v[1]=v1;
-}
+uint32_t data_buffer[2]; // Buffer for decrypted data
+char msg[50]; // Message buffer for UART transmission
 
 /* UART Receive Complete Callback */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART1) {
+        uart_rx_ready = 1;
+
         // Copy received data to data_buffer
         memcpy(data_buffer, RxData, sizeof(RxData));
 
@@ -50,17 +36,40 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
         uint16_t adcValue = (uint16_t)(data_buffer[0] & 0xFFFF);
         uint32_t counter = data_buffer[1];
 
+        // Debug: Print raw received values
+        sprintf(msg, "Raw: 0x%08lx 0x%08lx\r\n", data_buffer[0], data_buffer[1]);
+        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+
         // Convert adcValue to voltage
         float voltage = (adcValue * 3.3f) / 4095.0f;
 
         // Prepare message to print
-        sprintf(msg, "ADC Value: %u, Voltage: %.2f V, Counter: %lu\r\n", adcValue, voltage, counter);
-
-        // Transmit the message over UART for debugging
+        sprintf(msg, "ADC: %u, V: %.2f, Cnt: %lu\r\n", adcValue, voltage, counter);
         HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 
         // Re-enable reception
-        HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
+        uart_status = HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
+        if(uart_status != HAL_OK) {
+            sprintf(msg, "UART Re-enable failed: %d\r\n", uart_status);
+            HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+        }
+    }
+}
+
+/* UART Error Callback */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)
+    {
+        // Get error flags
+        uint32_t error = HAL_UART_GetError(huart);
+
+        // Prepare error message
+        sprintf(msg, "UART Error: 0x%lx\r\n", error);
+        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+
+        // Re-enable reception
+        uart_status = HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
     }
 }
 
@@ -70,11 +79,20 @@ int main(void) {
     MX_GPIO_Init();
     MX_USART1_UART_Init();
 
+    // Initial message
+    sprintf(msg, "STM32 UART Receiver Started\r\n");
+    HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+
     // Enable receiver
-    HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
+    uart_status = HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
+    if(uart_status != HAL_OK) {
+        sprintf(msg, "Initial UART enable failed: %d\r\n", uart_status);
+        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+    }
 
     while (1) {
-        // Main loop can be empty or used for other tasks
+        // Main loop can monitor uart_rx_ready flag if needed
+        HAL_Delay(100);  // Add small delay to prevent tight loop
     }
 }
 
