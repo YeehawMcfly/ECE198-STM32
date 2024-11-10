@@ -1,69 +1,19 @@
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
-/* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
 #include "fonts.h"
 #include "ssd1306.h"
-/* USER CODE END Includes */
 
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
+// Peripheral Handles
+UART_HandleTypeDef huart1;
 I2C_HandleTypeDef hi2c1;
 
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
+// Function Prototypes
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
-/* USER CODE BEGIN PFP */
 
-/* USER CODE END PFP */
 
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
 int main(void)
 {
 
@@ -140,66 +90,46 @@ int main(void)
   /* USER CODE END 3 */
 }
 
-static void MX_USART1_UART_Init(void) {
-    huart1.Instance = USART1;
-    huart1.Init.BaudRate = 115200;
-    huart1.Init.WordLength = UART_WORDLENGTH_8B;
-    huart1.Init.StopBits = UART_STOPBITS_1;
-    huart1.Init.Parity = UART_PARITY_NONE;
-    huart1.Init.Mode = UART_MODE_TX_RX; // Enable both TX and RX for Half-Duplex
-    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
 
-    if (HAL_HalfDuplex_Init(&huart1) != HAL_OK) {
-        Error_Handler();
-    }
+static void MX_GPIO_Init(void)
+{
+/* USER CODE BEGIN MX_GPIO_Init_1 */
+/* USER CODE END MX_GPIO_Init_1 */
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+/* USER CODE BEGIN MX_GPIO_Init_2 */
+/* USER CODE END MX_GPIO_Init_2 */
 }
 
-static void MX_GPIO_Init(void){
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
+static void MX_I2C1_Init(void)
+{
 
-    // Enable GPIO Ports Clock
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOH_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE(); // Enable GPIOB for I2C1
+  /* USER CODE BEGIN I2C1_Init 0 */
 
-    // Configure PC13 as Input with External Interrupt
-    GPIO_InitStruct.Pin = GPIO_PIN_13;
-    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-    GPIO_InitStruct.Pull = GPIO_PULLUP;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  /* USER CODE END I2C1_Init 0 */
 
-    // Configure I2C1 SCL and SDA (Assuming PB6=SCL, PB7=SDA)
-    GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-    GPIO_InitStruct.Pull = GPIO_PULLUP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF4_I2C1; // AF4 for I2C1 on many STM32s
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  /* USER CODE BEGIN I2C1_Init 1 */
 
-    // Set EXTI Line 15_10 Interrupt Priority and Enable it
-    HAL_NVIC_SetPriority(EXTI15_10_IRQn,0,0);
-    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-}
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 400000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
 
-static void MX_I2C1_Init(void) {
-    hi2c1.Instance = I2C1;
-    hi2c1.Init.ClockSpeed = 400000; // Set to 400 kHz for Fast Mode
-    hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
-    hi2c1.Init.OwnAddress1 = 0;
-    hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-    hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-    hi2c1.Init.OwnAddress2 = 0;
-    hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-    hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-    if(HAL_I2C_Init(&hi2c1)!= HAL_OK){
-        Error_Handler();
-    }
+  /* USER CODE END I2C1_Init 2 */
 
-    // Configure analog and digital filters
-    HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE);
-    HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0);
 }
 
 void SystemClock_Config(void){
@@ -237,9 +167,6 @@ void SystemClock_Config(void){
 }
 
 void Error_Handler(void){
-    // Send UART error message
-    sprintf(msg, "Error_Handler Invoked\r\n");
-    HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     // Toggle an LED or indicate error in another way
     while (1){
         // Example: Toggle LED on PA5
