@@ -8,20 +8,31 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 
-uint8_t RxData[1];
+// Increase buffer size to match sender's buffer
+uint8_t RxData[8];
 uint8_t yPos = 0;
 char msg[50];
+volatile uint8_t dataReceived = 0;
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size){
-    if(Size >0){
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+    if (huart == &huart1 && Size > 0) {
         yPos = RxData[0];
-        sprintf(msg, "yPos: %u\r\n", yPos);
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+        dataReceived = 1;
+
+        // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
+
+        // Format and transmit debug message
+        sprintf(msg, "yPos: %u\r\n", yPos);
+
+        // Switch to transmit mode for debug output
+        HAL_HalfDuplex_EnableTransmitter(&huart1);
+        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+        HAL_HalfDuplex_EnableReceiver(&huart1);
     }
 }
 
-int main(void){
+int main(void) {
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
@@ -31,19 +42,28 @@ int main(void){
     HAL_HalfDuplex_EnableReceiver(&huart1);
     HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-    while(1){}
+    while(1) {
+        if (dataReceived) {
+            // Process received data if needed
+            dataReceived = 0;
+
+            // Optional: Add a small delay to prevent overwhelming the UART
+            HAL_Delay(10);
+        }
+    }
 }
 
-static void MX_USART1_UART_Init(void){
+static void MX_USART1_UART_Init(void) {
     huart1.Instance = USART1;
     huart1.Init.BaudRate = 115200;
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
     huart1.Init.StopBits = UART_STOPBITS_1;
     huart1.Init.Parity = UART_PARITY_NONE;
-    huart1.Init.Mode = UART_MODE_TX_RX; // Enable both TX and RX
+    huart1.Init.Mode = UART_MODE_TX_RX;
     huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-    if (HAL_HalfDuplex_Init(&huart1) != HAL_OK){
+
+    if (HAL_HalfDuplex_Init(&huart1) != HAL_OK) {
         Error_Handler();
     }
 }

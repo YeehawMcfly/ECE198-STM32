@@ -13,74 +13,106 @@ static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
 
-uint8_t TxData[1];
+// Increase buffer size and add proper padding
+uint8_t TxData[8] = {0};
+uint8_t RxData[8] = {0};
 uint8_t yPos = 0;
 uint8_t prevYPos = 0;
+volatile uint8_t transmissionComplete = 1;
 
-int main(void){
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart == &huart1) {
+        transmissionComplete = 1;
+    }
+}
+
+int main(void) {
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
     MX_I2C1_Init();
     MX_ADC1_Init();
     MX_USART1_UART_Init();
+
     SSD1306_Init();
 
-    // Initial ADC Read
+    // Initial ADC reading
     HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-    yPos = SSD1306_HEIGHT -1 - ((HAL_ADC_GetValue(&hadc1) * (SSD1306_HEIGHT -1)) / 4095);
-    prevYPos = yPos;
-
-    while(1){
-        // Read ADC Value
-        HAL_ADC_Start(&hadc1);
-        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-        yPos = SSD1306_HEIGHT -1 - ((HAL_ADC_GetValue(&hadc1) * (SSD1306_HEIGHT -1)) / 4095);
-
-        // Update OLED Display
-        SSD1306_ShiftBufferLeft();
-        SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-        SSD1306_UpdateScreen();
+    if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
+        uint16_t adcValue = HAL_ADC_GetValue(&hadc1);
+        yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
         prevYPos = yPos;
+    }
 
-        // Prepare yPos for Transmission
-        TxData[0] = yPos;
+    while(1) {
+        if (transmissionComplete) {
+            HAL_ADC_Start(&hadc1);
 
-        // Transmit yPos via UART (Half-Duplex)
-        HAL_UART_Transmit(&huart1, TxData, sizeof(TxData), 1000);
-        HAL_Delay(50);
+            if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
+                uint16_t adcValue = HAL_ADC_GetValue(&hadc1);
+                yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
+
+                // Update OLED Display
+                SSD1306_ShiftBufferLeft();
+                SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+                SSD1306_UpdateScreen();
+                prevYPos = yPos;
+
+                // Clear buffer and prepare data
+                memset(TxData, 0, sizeof(TxData));
+                TxData[0] = yPos;
+
+                // Switch to transmit mode and send data
+                HAL_HalfDuplex_EnableTransmitter(&huart1);
+                transmissionComplete = 0;
+                HAL_UART_Transmit_IT(&huart1, TxData, sizeof(TxData));
+
+                // Wait for transmission to complete
+                while (!transmissionComplete) {
+                    // Could add a timeout here if needed
+                }
+
+                // Switch back to receive mode
+                HAL_HalfDuplex_EnableReceiver(&huart1);
+
+                // Add delay between transmissions
+                HAL_Delay(50);
+            }
+        }
     }
 }
 
-static void MX_USART1_UART_Init(void){
+static void MX_USART1_UART_Init(void) {
     huart1.Instance = USART1;
     huart1.Init.BaudRate = 115200;
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
     huart1.Init.StopBits = UART_STOPBITS_1;
     huart1.Init.Parity = UART_PARITY_NONE;
-    huart1.Init.Mode = UART_MODE_TX_RX; // Enable both TX and RX
+    huart1.Init.Mode = UART_MODE_TX_RX;
     huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-    if (HAL_HalfDuplex_Init(&huart1) != HAL_OK){
+
+    if (HAL_HalfDuplex_Init(&huart1) != HAL_OK) {
         Error_Handler();
     }
 }
 
 static void MX_GPIO_Init(void){
     GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // Enable GPIO Ports Clock
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOH_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
 
-    // Configure PC13 as Input with Interrupt
+    // Configure PC13 as Input with External Interrupt
     GPIO_InitStruct.Pin = GPIO_PIN_13;
     GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-    // Enable and Set EXTI Line 15_10 Interrupt to the lowest priority
+    // Set EXTI Line 15_10 Interrupt Priority and Enable it
     HAL_NVIC_SetPriority(EXTI15_10_IRQn,0,0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
@@ -115,6 +147,21 @@ void SystemClock_Config(void){
     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2)!= HAL_OK){
+        Error_Handler();
+    }
+}
+
+static void MX_I2C1_Init(void){
+    hi2c1.Instance = I2C1;
+    hi2c1.Init.ClockSpeed = 400000; // 400 kHz Fast Mode
+    hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+    hi2c1.Init.OwnAddress1 = 0;
+    hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+    hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    hi2c1.Init.OwnAddress2 = 0;
+    hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+    if(HAL_I2C_Init(&hi2c1)!= HAL_OK){
         Error_Handler();
     }
 }
