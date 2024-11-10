@@ -27,45 +27,12 @@ uint8_t yPos = 0;
 uint8_t prevYPos = 0;
 char msg[50];
 volatile uint8_t dataReceived = 0;
-volatile uint8_t i2cBusy = 0;
-volatile uint8_t oledUpdateNeeded = 0;
-#define OLED_UPDATE_INTERVAL 10  // Minimum time between OLED updates in ms
-
-uint32_t lastOledUpdate = 0;
 
 // Encryption key - must be the same on both sender and receiver
 const uint32_t key[4] = {1, 2, 3, 4};
 
 // Buffer for encryption/decryption operations (2 uint32_t for 8 bytes)
 uint32_t data_buffer[2];
-
-void UpdateOLEDSafe(void) {
-    uint32_t currentTime = HAL_GetTick();
-
-    // Check if enough time has passed since last update
-    if (currentTime - lastOledUpdate < OLED_UPDATE_INTERVAL) {
-        return;
-    }
-
-    // Set busy flag before starting I2C operation
-    i2cBusy = 1;
-
-    // Temporarily disable UART interrupts
-    HAL_NVIC_DisableIRQ(USART1_IRQn);
-
-    // Perform OLED updates
-    SSD1306_ShiftBufferLeft();
-    SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-    SSD1306_UpdateScreen();
-
-    // Re-enable UART interrupts
-    HAL_NVIC_EnableIRQ(USART1_IRQn);
-
-    // Clear busy flag
-    i2cBusy = 0;
-    lastOledUpdate = currentTime;
-    prevYPos = yPos;
-}
 
 // Transmission Complete Callback (Not used in Receiver)
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
@@ -112,68 +79,97 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
             Size = sizeof(RxData);
         }
 
-        // Only process data if I2C is not busy
-        if (!i2cBusy) {
-            // Store encrypted data first
-            memcpy(RxData_Encrypted, RxData, Size);
+        // Store encrypted data first
+        memcpy(RxData_Encrypted, RxData, Size);
 
-            // Set flag for main loop to process
-            dataReceived = 1;
-        }
+        // Decrypt the received data
+        decryptMessage(RxData, Size);
 
-        // Re-enable reception
+        // Extract yPos from decrypted data
+        yPos = RxData[0];
+        dataReceived = 1;  // Set flag only
+
+        // Re-enable reception immediately
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
+
+        // Remove UART transmission from here to avoid half-duplex issues
     }
 }
 
-int main(void) {
-    // Initialize the Hardware Abstraction Layer
-    HAL_Init();
+int main(void)
+{
 
-    // Configure the system clock
-    SystemClock_Config();
+  /* USER CODE BEGIN 1 */
 
-    // Initialize all configured peripherals
-    MX_GPIO_Init();
-    MX_I2C1_Init();
-    MX_USART1_UART_Init();
+  /* USER CODE END 1 */
 
-    // Initialize the OLED display
-    if (SSD1306_Init() != 0) { // Modify SSD1306_Init to accept I2C handle if necessary
-        sprintf(msg, "OLED Init Failed\r\n");
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-        Error_Handler();
-    } else {
-        sprintf(msg, "OLED Init Success\r\n");
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-    }
+  /* MCU Configuration--------------------------------------------------------*/
 
-    // Clear the display initially
-    SSD1306_Clear();
-    SSD1306_UpdateScreen();
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-    // Initialize UART Reception in Half-Duplex Mode
-    HAL_HalfDuplex_EnableReceiver(&huart1);
-    HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
+  /* USER CODE BEGIN Init */
 
-    while(1) {
-        if (dataReceived && !i2cBusy) {
-            // Process received data only when I2C is not busy
-            decryptMessage(RxData, sizeof(RxData));
-            yPos = RxData[0];
-            oledUpdateNeeded = 1;
-            dataReceived = 0;
-        }
+  /* USER CODE END Init */
 
-        if (oledUpdateNeeded && !i2cBusy) {
-            UpdateOLEDSafe();
-            oledUpdateNeeded = 0;
-        }
+  /* Configure the system clock */
+  SystemClock_Config();
 
-        // Small delay to prevent tight polling
-        HAL_Delay(1);
-    }
+  /* USER CODE BEGIN SysInit */
 
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  /* USER CODE BEGIN 2 */
+  SSD1306_Init();
+  SSD1306_GotoXY (0,0);
+  SSD1306_Puts ("MICROPETA", &Font_11x18, 1);
+  SSD1306_GotoXY (0, 30);
+  SSD1306_Puts ("BY NIZAR", &Font_11x18, 1);
+  SSD1306_UpdateScreen();
+  HAL_Delay (1000);
+  SSD1306_ScrollRight(0,7);
+  HAL_Delay(3000);
+  SSD1306_ScrollLeft(0,7);
+  HAL_Delay(3000);
+  SSD1306_Stopscroll();
+  SSD1306_Clear();
+
+  int num=2024;
+  char snum[5];
+  SSD1306_GotoXY (30,20);
+  itoa(num, snum, 10);
+  SSD1306_Puts (snum, &Font_16x26, 1);
+  SSD1306_UpdateScreen();
+
+  //SSD1306_DrawLine(POINT1 X, POINT1 Y, POINT2 X, POINT2 Y, 1);
+  SSD1306_DrawLine(1,54,126,54,1);
+  SSD1306_UpdateScreen();
+  HAL_Delay (5000);
+  SSD1306_Clear();
+
+  // For Rectangle, we need to use two corner points
+  // SSD1306_DrawRectangle(POINT1 X, POINT1 Y, POINT2 X, POINT2 Y, 1);
+  SSD1306_DrawRectangle(17,1,115,14,1);
+  // SSD1306_DrawTriangle(POINT1X, POINT1Y, POINT2X, POINT2Y, POINT3X, POINT3Y, 1);
+  SSD1306_DrawTriangle(73,22,124,62,74,54,1);
+  // SSD1306_DrawCircle(CENTER POINT X, CENTER POINT Y, RADIUS, 1);
+  SSD1306_DrawCircle(34,50,13,1);
+  SSD1306_UpdateScreen();
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
 }
 
 static void MX_USART1_UART_Init(void) {
@@ -221,7 +217,7 @@ static void MX_GPIO_Init(void){
 
 static void MX_I2C1_Init(void) {
     hi2c1.Instance = I2C1;
-    hi2c1.Init.ClockSpeed = 400000;
+    hi2c1.Init.ClockSpeed = 400000; // Set to 400 kHz for Fast Mode
     hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
     hi2c1.Init.OwnAddress1 = 0;
     hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -229,14 +225,13 @@ static void MX_I2C1_Init(void) {
     hi2c1.Init.OwnAddress2 = 0;
     hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
     hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-
-    if(HAL_I2C_Init(&hi2c1) != HAL_OK) {
+    if(HAL_I2C_Init(&hi2c1)!= HAL_OK){
         Error_Handler();
     }
 
-    // Enable analog and digital filtering
+    // Configure analog and digital filters
     HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE);
-    HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 4);  // Add digital filtering
+    HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0);
 }
 
 void SystemClock_Config(void){
