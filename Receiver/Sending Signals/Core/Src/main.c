@@ -18,14 +18,14 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 void decrypt(uint32_t v[2], const uint32_t k[4]);
-void decryptMessage(uint8_t* input, size_t len);
 
 /* Variables */
-uint8_t RxData[33]; // Increased size by 1 for null-termination
+uint8_t RxData[8];          // Buffer to receive encrypted data
 const uint32_t key[4] = { 1, 2, 3, 4 };
-uint32_t data_buffer[8]; // Increased size to handle 32 bytes
+uint32_t data_buffer[2];    // Buffer for decrypted data
+char msg[50];               // Message buffer for UART transmission
 
-/* Decryption Functions */
+/* Decryption Function */
 void decrypt(uint32_t v[2], const uint32_t k[4]) {
     uint32_t v0=v[0], v1=v[1], sum=0xC6EF3720, i;
     uint32_t delta=0x9E3779B9;
@@ -37,34 +37,30 @@ void decrypt(uint32_t v[2], const uint32_t k[4]) {
     v[0]=v0; v[1]=v1;
 }
 
-void decryptMessage(uint8_t* input, size_t len) {
-    memcpy(data_buffer, input, len);
+/* UART Receive Complete Callback */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART1) {
+        // Copy received data to data_buffer
+        memcpy(data_buffer, RxData, sizeof(RxData));
 
-    int blocks = (len + 7) / 8;
-    for (int i = 0; i < blocks * 2; i += 2) {
-        decrypt(&data_buffer[i], key);
-    }
+        // Decrypt the data
+        decrypt(data_buffer, key);
 
-    memcpy(input, data_buffer, len);
-}
+        // Extract adcValue and counter
+        uint16_t adcValue = (uint16_t)(data_buffer[0] & 0xFFFF);
+        uint32_t counter = data_buffer[1];
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-    if (Size > 0) {
-        // Decrypt the received data
-        decryptMessage(RxData, Size);
+        // Convert adcValue to voltage
+        float voltage = (adcValue * 3.3f) / 4095.0f;
 
-        // Ensure null-termination
-        if (Size < sizeof(RxData)) {
-            RxData[Size] = '\0';
-        } else {
-            RxData[sizeof(RxData) - 1] = '\0';
-        }
+        // Prepare message to print
+        sprintf(msg, "ADC Value: %u, Voltage: %.2f V, Counter: %lu\r\n", adcValue, voltage, counter);
 
-        // Transmit the decrypted message over UART for debugging
-        HAL_UART_Transmit(&huart1, RxData, strlen((char*)RxData), HAL_MAX_DELAY);
+        // Transmit the message over UART for debugging
+        HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 
         // Re-enable reception
-        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+        HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
     }
 }
 
@@ -75,13 +71,28 @@ int main(void) {
     MX_USART1_UART_Init();
 
     // Enable receiver
-    HAL_HalfDuplex_EnableReceiver(&huart1);
-    HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
+    HAL_UART_Receive_IT(&huart1, RxData, sizeof(RxData));
 
     while (1) {
-        // Receive-only operation; main loop can be empty or used for other tasks
+        // Main loop can be empty or used for other tasks
     }
 }
+
+/* USART1 Initialization Function */
+static void MX_USART1_UART_Init(void) {
+    huart1.Instance = USART1;
+    huart1.Init.BaudRate = 115200;               // Match transmitter's baud rate
+    huart1.Init.WordLength = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits = UART_STOPBITS_1;
+    huart1.Init.Parity = UART_PARITY_NONE;
+    huart1.Init.Mode = UART_MODE_RX;             // Receive only
+    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+    if (HAL_UART_Init(&huart1) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
 
 /**
   * @brief System Clock Configuration

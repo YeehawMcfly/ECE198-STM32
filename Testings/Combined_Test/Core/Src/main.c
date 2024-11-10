@@ -18,55 +18,31 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
 #include "fonts.h"
 #include "ssd1306.h"
-/* USER CODE END Includes */
+#include <string.h>  // Include for memset and memcpy
 
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
-
 I2C_HandleTypeDef hi2c1;
+UART_HandleTypeDef huart1;
 
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
+/* Function Prototypes */
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
-/* USER CODE BEGIN PFP */
+void encrypt(uint32_t v[2], const uint32_t k[4]);
 
-/* USER CODE END PFP */
+/* Variables */
+const uint32_t key[4] = { 1, 2, 3, 4 };
+uint8_t TxData[8];          // Buffer to hold encrypted data (8 bytes)
+uint32_t data_buffer[2];    // Buffer for encryption (2 x 32-bit words)
+uint32_t counter = 0;       // Counter to include in the data
+uint16_t adcValue = 0;
+uint8_t yPos = 0;
+uint8_t prevYPos = 0;
 
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
 int main(void)
 {
     /* Initialization code */
@@ -75,11 +51,16 @@ int main(void)
     MX_GPIO_Init();
     MX_I2C1_Init();
     MX_ADC1_Init();
+    MX_USART1_UART_Init();
+
     SSD1306_Init();
 
-    uint16_t adcValue = 0;
-    uint8_t yPos = 0;
-    uint8_t prevYPos = 0;
+    /* Initial ADC read to initialize prevYPos */
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+    adcValue = HAL_ADC_GetValue(&hadc1);
+    yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
+    prevYPos = yPos;
 
     while (1)
     {
@@ -88,7 +69,7 @@ int main(void)
         HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
         adcValue = HAL_ADC_GetValue(&hadc1);
 
-        /* Map ADC value to yPos (0-63) */
+        /* Map ADC value to yPos (0 to SSD1306_HEIGHT - 1) */
         yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
 
         /* Shift display buffer to the left */
@@ -103,50 +84,34 @@ int main(void)
         /* Update prevYPos */
         prevYPos = yPos;
 
-        /* Adjust the delay as needed for your application */
+        /* Prepare data for encryption */
+        data_buffer[0] = (uint32_t)adcValue;  // ADC value
+        data_buffer[1] = counter++;           // Increment counter
+
+        /* Encrypt the data */
+        encrypt(data_buffer, key);
+
+        /* Copy encrypted data to TxData buffer */
+        memcpy(TxData, data_buffer, sizeof(data_buffer));
+
+        /* Send encrypted data over UART */
+        HAL_UART_Transmit(&huart1, TxData, sizeof(TxData), 1000);
+
+        /* Delay */
         HAL_Delay(50);
     }
 }
 
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
-
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
-  {
-    Error_Handler();
-  }
+/* Encryption function */
+void encrypt(uint32_t v[2], const uint32_t k[4]) {
+    uint32_t v0=v[0], v1=v[1], sum=0, i;
+    uint32_t delta=0x9E3779B9;
+    for (i=0; i<32; i++) {
+        sum += delta;
+        v0 += ((v1<<4) + k[0]) ^ (v1 + sum) ^ ((v1>>5) + k[1]);
+        v1 += ((v0<<4) + k[2]) ^ (v0 + sum) ^ ((v0>>5) + k[3]);
+    }
+    v[0]=v0; v[1]=v1;
 }
 
 /**

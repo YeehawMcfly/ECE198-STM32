@@ -20,17 +20,79 @@ UART_HandleTypeDef huart1;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_I2C1_Init(void);
+static void MX_ADC1_Init(void);
 void encrypt(uint32_t v[2], const uint32_t k[4]);
-void encryptMessage(uint8_t* input, size_t len);
 
 /* Variables */
-uint8_t TxData[32];
-int indx = 0;
-int isClicked = 0;
 const uint32_t key[4] = { 1, 2, 3, 4 };
-uint32_t data_buffer[8]; // Increased size to handle 32 bytes
+uint8_t TxData[8];          // Buffer to hold encrypted data (8 bytes)
+uint32_t data_buffer[2];    // Buffer for encryption (2 x 32-bit words)
+uint32_t counter = 0;       // Counter to include in the data
+uint16_t adcValue = 0;
+uint8_t yPos = 0;
+uint8_t prevYPos = 0;
 
-/* Encryption Functions */
+int main(void)
+{
+    /* Initialization code */
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_I2C1_Init();
+    MX_ADC1_Init();
+    MX_USART1_UART_Init();
+
+    SSD1306_Init();
+
+    /* Initial ADC read to initialize prevYPos */
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+    adcValue = HAL_ADC_GetValue(&hadc1);
+    yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
+    prevYPos = yPos;
+
+    while (1)
+    {
+        /* Read ADC value */
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+        adcValue = HAL_ADC_GetValue(&hadc1);
+
+        /* Map ADC value to yPos (0 to SSD1306_HEIGHT - 1) */
+        yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
+
+        /* Shift display buffer to the left */
+        SSD1306_ShiftBufferLeft();
+
+        /* Draw vertical line between prevYPos and yPos in rightmost column */
+        SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+
+        /* Update the display */
+        SSD1306_UpdateScreen();
+
+        /* Update prevYPos */
+        prevYPos = yPos;
+
+        /* Prepare data for encryption */
+        data_buffer[0] = (uint32_t)adcValue;  // ADC value
+        data_buffer[1] = counter++;           // Increment counter
+
+        /* Encrypt the data */
+        encrypt(data_buffer, key);
+
+        /* Copy encrypted data to TxData buffer */
+        memcpy(TxData, data_buffer, sizeof(data_buffer));
+
+        /* Send encrypted data over UART */
+        HAL_UART_Transmit(&huart1, TxData, sizeof(TxData), 1000);
+
+        /* Delay */
+        HAL_Delay(50);
+    }
+}
+
+/* Encryption function */
 void encrypt(uint32_t v[2], const uint32_t k[4]) {
     uint32_t v0=v[0], v1=v[1], sum=0, i;
     uint32_t delta=0x9E3779B9;
@@ -40,57 +102,6 @@ void encrypt(uint32_t v[2], const uint32_t k[4]) {
         v1 += ((v0<<4) + k[2]) ^ (v0 + sum) ^ ((v0>>5) + k[3]);
     }
     v[0]=v0; v[1]=v1;
-}
-
-void encryptMessage(uint8_t* input, size_t len) {
-    memset(data_buffer, 0, sizeof(data_buffer));
-    memcpy(data_buffer, input, len);
-
-    int blocks = (len + 7) / 8;
-    for (int i = 0; i < blocks * 2; i += 2) {
-        encrypt(&data_buffer[i], key);
-    }
-
-    memcpy(input, data_buffer, len);
-}
-
-/* GPIO Interrupt Callback */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == GPIO_PIN_13) { // Adjust pin number as needed
-        isClicked = 1;
-    }
-}
-
-int main(void) {
-    HAL_Init();
-    SystemClock_Config();
-    MX_GPIO_Init();
-    MX_USART1_UART_Init();
-
-    while (1) {
-        if (isClicked) {
-            HAL_Delay(500);
-            indx++;
-
-            // Prepare message
-            int len = sprintf((char*)TxData, "Hello From f401--%d", indx);
-
-            // Pad the message to be a multiple of 8 bytes
-            int padded_len = ((len + 7) / 8) * 8;
-            if (padded_len > 32) padded_len = 32; // Ensure we don't exceed buffer size
-            memset(&TxData[len], 0, padded_len - len); // Pad with zeros if necessary
-
-            // Encrypt the message
-            encryptMessage(TxData, padded_len);
-
-            // Send encrypted data
-            HAL_HalfDuplex_EnableTransmitter(&huart1);
-            HAL_UART_Transmit(&huart1, TxData, padded_len, 1000);
-            HAL_HalfDuplex_EnableReceiver(&huart1);
-
-            isClicked = 0;
-        }
-    }
 }
 
 
