@@ -1,101 +1,69 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2024 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
-#include <string.h>
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include "fonts.h"
 #include "ssd1306.h"
+/* USER CODE END Includes */
 
-// Peripheral Handles
-UART_HandleTypeDef huart1;
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
-// Function Prototypes
+/* USER CODE BEGIN PV */
+
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
+/* USER CODE BEGIN PFP */
 
-// Encryption and Decryption Function Prototypes
-void encrypt(uint32_t v[2], const uint32_t k[4]);
-void decrypt(uint32_t v[2], const uint32_t k[4]);
-void encryptMessage(uint8_t* input, size_t len);
-void decryptMessage(uint8_t* input, size_t len);
+/* USER CODE END PFP */
 
-// Global Variables
-uint8_t RxData[8];
-uint8_t RxData_Encrypted[8];
-uint8_t yPos = 0;
-uint8_t prevYPos = 0;
-char msg[50];
-volatile uint8_t dataReceived = 0;
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
 
-// Encryption key - must be the same on both sender and receiver
-const uint32_t key[4] = {1, 2, 3, 4};
+/* USER CODE END 0 */
 
-// Buffer for encryption/decryption operations (2 uint32_t for 8 bytes)
-uint32_t data_buffer[2];
-
-// Transmission Complete Callback (Not used in Receiver)
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
-    // Not required for Receiver unless transmitting data
-}
-
-// Decryption Function
-void decrypt(uint32_t v[2], const uint32_t k[4]) {
-    uint32_t v0 = v[0], v1 = v[1], sum = 0xC6EF3720, i;
-    uint32_t delta = 0x9E3779B9;
-    uint32_t k0 = k[0], k1 = k[1], k2 = k[2], k3 = k[3];
-    for (i = 0; i < 32; i++) {
-        v1 -= ((v0 << 4) + k2) ^ (v0 + sum) ^ ((v0 >> 5) + k3);
-        v0 -= ((v1 << 4) + k0) ^ (v1 + sum) ^ ((v1 >> 5) + k1);
-        sum -= delta;
-    }
-    v[0] = v0;
-    v[1] = v1;
-}
-
-// Decrypt Message Function
-void decryptMessage(uint8_t* input, size_t len) {
-    // Ensure len is a multiple of 8
-    if (len % 8 != 0) {
-        // Handle padding if necessary
-        // For simplicity, ignore extra bytes
-        len -= len % 8;
-    }
-
-    // Process each 8-byte block
-    for (size_t i = 0; i < len; i += 8) {
-        uint32_t v[2];
-        memcpy(&v, &input[i], sizeof(v));
-
-        decrypt(v, key);
-
-        memcpy(&input[i], v, sizeof(v));
-    }
-}
-
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-    if (huart == &huart1 && Size > 0) {
-        if (Size >= sizeof(RxData)) {
-            Size = sizeof(RxData);
-        }
-
-        // Store encrypted data first
-        memcpy(RxData_Encrypted, RxData, Size);
-
-        // Decrypt the received data
-        decryptMessage(RxData, Size);
-
-        // Extract yPos from decrypted data
-        yPos = RxData[0];
-        dataReceived = 1;  // Set flag only
-
-        // Re-enable reception immediately
-        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
-
-        // Remove UART transmission from here to avoid half-duplex issues
-    }
-}
-
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
 int main(void)
 {
 
