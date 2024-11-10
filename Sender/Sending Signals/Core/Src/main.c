@@ -8,135 +8,91 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stdio.h"
-#include "string.h"
+#include "fonts.h"
+#include "ssd1306.h"
+#include <string.h>  // Include for memset and memcpy
 
-/* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+I2C_HandleTypeDef hi2c1;
 UART_HandleTypeDef huart1;
 
-/* Private function prototypes -----------------------------------------------*/
+/* Function Prototypes */
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 void encrypt(uint32_t v[2], const uint32_t k[4]);
-void decrypt(uint32_t v[2], const uint32_t k[4]);
 void encryptMessage(uint8_t* input, size_t len);
-void decryptMessage(uint8_t* input, size_t len);
 
-/* USER CODE BEGIN PV */
-uint8_t RxData[32];  // Increased buffer size to accommodate encrypted data
+/* Variables */
+uint8_t TxData[32];
 int indx = 0;
-uint8_t TxData[32];  // Increased buffer size
 int isClicked = 0;
-
-// Encryption key - should be same on both devices
 const uint32_t key[4] = { 1, 2, 3, 4 };
+uint32_t data_buffer[8]; // Increased size to handle 32 bytes
 
-// Buffer for encryption/decryption operations
-uint32_t data_buffer[4];
-
-/* USER CODE BEGIN PV */
-
+/* Encryption Functions */
 void encrypt(uint32_t v[2], const uint32_t k[4]) {
     uint32_t v0=v[0], v1=v[1], sum=0, i;
     uint32_t delta=0x9E3779B9;
-    uint32_t k0=k[0], k1=k[1], k2=k[2], k3=k[3];
     for (i=0; i<32; i++) {
         sum += delta;
-        v0 += ((v1<<4) + k0) ^ (v1 + sum) ^ ((v1>>5) + k1);
-        v1 += ((v0<<4) + k2) ^ (v0 + sum) ^ ((v0>>5) + k3);
-    }
-    v[0]=v0; v[1]=v1;
-}
-
-void decrypt(uint32_t v[2], const uint32_t k[4]) {
-    uint32_t v0=v[0], v1=v[1], sum=0xC6EF3720, i;
-    uint32_t delta=0x9E3779B9;
-    uint32_t k0=k[0], k1=k[1], k2=k[2], k3=k[3];
-    for (i=0; i<32; i++) {
-        v1 -= ((v0<<4) + k2) ^ (v0 + sum) ^ ((v0>>5) + k3);
-        v0 -= ((v1<<4) + k0) ^ (v1 + sum) ^ ((v1>>5) + k1);
-        sum -= delta;
+        v0 += ((v1<<4) + k[0]) ^ (v1 + sum) ^ ((v1>>5) + k[1]);
+        v1 += ((v0<<4) + k[2]) ^ (v0 + sum) ^ ((v0>>5) + k[3]);
     }
     v[0]=v0; v[1]=v1;
 }
 
 void encryptMessage(uint8_t* input, size_t len) {
-    // Clear the buffer first
     memset(data_buffer, 0, sizeof(data_buffer));
-
-    // Copy input data to buffer
     memcpy(data_buffer, input, len);
 
-    // Encrypt in blocks of 8 bytes (2 uint32_t)
-    for (int i = 0; i < 4; i += 2) {
+    int blocks = (len + 7) / 8;
+    for (int i = 0; i < blocks * 2; i += 2) {
         encrypt(&data_buffer[i], key);
     }
 
-    // Copy back to input buffer
-    memcpy(input, data_buffer, sizeof(data_buffer));
+    memcpy(input, data_buffer, len);
 }
 
-void decryptMessage(uint8_t* input, size_t len) {
-    // Copy input to buffer
-    memcpy(data_buffer, input, len);
-
-    // Decrypt in blocks of 8 bytes
-    for (int i = 0; i < 4; i += 2) {
-        decrypt(&data_buffer[i], key);
-    }
-
-    // Copy back to input buffer
-    memcpy(input, data_buffer, sizeof(data_buffer));
-}
-
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-    if (Size > 0) {
-        // Decrypt the received data
-        decryptMessage(RxData, Size);
-        // Re-enable reception
-        HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-    }
-}
-
+/* GPIO Interrupt Callback */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == GPIO_PIN_13) {
-        if (isClicked == 0) {
-            isClicked = 1;
-        }
+    if (GPIO_Pin == GPIO_PIN_13) { // Adjust pin number as needed
+        isClicked = 1;
     }
 }
 
 int main(void) {
-    /* Standard initialization code remains the same until while(1) loop */
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
     MX_USART1_UART_Init();
 
-    HAL_HalfDuplex_EnableReceiver(&huart1);
-    HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
-
     while (1) {
-        if (isClicked == 1) {
+        if (isClicked) {
             HAL_Delay(500);
             indx++;
 
             // Prepare message
             int len = sprintf((char*)TxData, "Hello From f401--%d", indx);
 
+            // Pad the message to be a multiple of 8 bytes
+            int padded_len = ((len + 7) / 8) * 8;
+            if (padded_len > 32) padded_len = 32; // Ensure we don't exceed buffer size
+            memset(&TxData[len], 0, padded_len - len); // Pad with zeros if necessary
+
             // Encrypt the message
-            encryptMessage(TxData, 32);  // Use full buffer size for encryption
+            encryptMessage(TxData, padded_len);
 
             // Send encrypted data
             HAL_HalfDuplex_EnableTransmitter(&huart1);
-            HAL_UART_Transmit(&huart1, TxData, 32, 1000);  // Send full buffer
+            HAL_UART_Transmit(&huart1, TxData, padded_len, 1000);
             HAL_HalfDuplex_EnableReceiver(&huart1);
 
             isClicked = 0;
         }
     }
 }
+
 
 /**
   * @brief System Clock Configuration
@@ -155,12 +111,11 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 4;
   RCC_OscInitStruct.PLL.PLLN = 84;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
@@ -182,6 +137,92 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 400000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -232,6 +273,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin : PC13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;

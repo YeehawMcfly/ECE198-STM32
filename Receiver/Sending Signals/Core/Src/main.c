@@ -6,137 +6,82 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stdio.h"
-#include "string.h"
+#include <stdio.h>
+#include <string.h>
 
-/* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
 
-/* Private function prototypes -----------------------------------------------*/
+/* Function Prototypes */
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
-void encrypt(uint32_t v[2], const uint32_t k[4]);
 void decrypt(uint32_t v[2], const uint32_t k[4]);
-void encryptMessage(uint8_t* input, size_t len);
 void decryptMessage(uint8_t* input, size_t len);
 
-/* USER CODE BEGIN PV */
-uint8_t RxData[32];  // Increased buffer size to accommodate encrypted data
-int indx = 0;
-uint8_t TxData[32];  // Increased buffer size
-int isClicked = 0;
-
-// Encryption key - should be same on both devices
+/* Variables */
+uint8_t RxData[33]; // Increased size by 1 for null-termination
 const uint32_t key[4] = { 1, 2, 3, 4 };
+uint32_t data_buffer[8]; // Increased size to handle 32 bytes
 
-// Buffer for encryption/decryption operations
-uint32_t data_buffer[4];
-
-/* USER CODE BEGIN PV */
-
-void encrypt(uint32_t v[2], const uint32_t k[4]) {
-    uint32_t v0=v[0], v1=v[1], sum=0, i;
-    uint32_t delta=0x9E3779B9;
-    uint32_t k0=k[0], k1=k[1], k2=k[2], k3=k[3];
-    for (i=0; i<32; i++) {
-        sum += delta;
-        v0 += ((v1<<4) + k0) ^ (v1 + sum) ^ ((v1>>5) + k1);
-        v1 += ((v0<<4) + k2) ^ (v0 + sum) ^ ((v0>>5) + k3);
-    }
-    v[0]=v0; v[1]=v1;
-}
-
+/* Decryption Functions */
 void decrypt(uint32_t v[2], const uint32_t k[4]) {
     uint32_t v0=v[0], v1=v[1], sum=0xC6EF3720, i;
     uint32_t delta=0x9E3779B9;
-    uint32_t k0=k[0], k1=k[1], k2=k[2], k3=k[3];
     for (i=0; i<32; i++) {
-        v1 -= ((v0<<4) + k2) ^ (v0 + sum) ^ ((v0>>5) + k3);
-        v0 -= ((v1<<4) + k0) ^ (v1 + sum) ^ ((v1>>5) + k1);
+        v1 -= ((v0<<4) + k[2]) ^ (v0 + sum) ^ ((v0>>5) + k[3]);
+        v0 -= ((v1<<4) + k[0]) ^ (v1 + sum) ^ ((v1>>5) + k[1]);
         sum -= delta;
     }
     v[0]=v0; v[1]=v1;
 }
 
-void encryptMessage(uint8_t* input, size_t len) {
-    // Clear the buffer first
-    memset(data_buffer, 0, sizeof(data_buffer));
-
-    // Copy input data to buffer
-    memcpy(data_buffer, input, len);
-
-    // Encrypt in blocks of 8 bytes (2 uint32_t)
-    for (int i = 0; i < 4; i += 2) {
-        encrypt(&data_buffer[i], key);
-    }
-
-    // Copy back to input buffer
-    memcpy(input, data_buffer, sizeof(data_buffer));
-}
-
 void decryptMessage(uint8_t* input, size_t len) {
-    // Copy input to buffer
     memcpy(data_buffer, input, len);
 
-    // Decrypt in blocks of 8 bytes
-    for (int i = 0; i < 4; i += 2) {
+    int blocks = (len + 7) / 8;
+    for (int i = 0; i < blocks * 2; i += 2) {
         decrypt(&data_buffer[i], key);
     }
 
-    // Copy back to input buffer
-    memcpy(input, data_buffer, sizeof(data_buffer));
+    memcpy(input, data_buffer, len);
 }
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (Size > 0) {
         // Decrypt the received data
         decryptMessage(RxData, Size);
+
+        // Ensure null-termination
+        if (Size < sizeof(RxData)) {
+            RxData[Size] = '\0';
+        } else {
+            RxData[sizeof(RxData) - 1] = '\0';
+        }
+
+        // Transmit the decrypted message over UART for debugging
+        HAL_UART_Transmit(&huart1, RxData, strlen((char*)RxData), HAL_MAX_DELAY);
+
         // Re-enable reception
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
     }
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == GPIO_PIN_13) {
-        if (isClicked == 0) {
-            isClicked = 1;
-        }
-    }
-}
-
 int main(void) {
-    /* Standard initialization code remains the same until while(1) loop */
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
     MX_USART1_UART_Init();
 
+    // Enable receiver
     HAL_HalfDuplex_EnableReceiver(&huart1);
     HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, 32);
 
     while (1) {
-        if (isClicked == 1) {
-            HAL_Delay(500);
-            indx++;
-
-            // Prepare message
-            int len = sprintf((char*)TxData, "Hello From f401--%d", indx);
-
-            // Encrypt the message
-            encryptMessage(TxData, 32);  // Use full buffer size for encryption
-
-            // Send encrypted data
-            HAL_HalfDuplex_EnableTransmitter(&huart1);
-            HAL_UART_Transmit(&huart1, TxData, 32, 1000);  // Send full buffer
-            HAL_HalfDuplex_EnableReceiver(&huart1);
-
-            isClicked = 0;
-        }
+        // Receive-only operation; main loop can be empty or used for other tasks
     }
 }
+
 
 /**
   * @brief System Clock Configuration
