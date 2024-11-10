@@ -1,16 +1,18 @@
 #include "main.h"
+#include "fonts.h"      // Ensure you have fonts.h for SSD1306
+#include "ssd1306.h"    // Include the SSD1306 OLED library
 #include <stdio.h>
 #include <string.h>
 
 // Peripheral Handles
 UART_HandleTypeDef huart1;
+I2C_HandleTypeDef hi2c1;  // Added I2C Handle for OLED
 
 // Function Prototypes
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
-
-// Encryption and Decryption Function Prototypes
+static void MX_I2C1_Init(void);  // Added I2C Init
 void encrypt(uint32_t v[2], const uint32_t k[4]);
 void decrypt(uint32_t v[2], const uint32_t k[4]);
 void encryptMessage(uint8_t* input, size_t len);
@@ -18,8 +20,9 @@ void decryptMessage(uint8_t* input, size_t len);
 
 // Global Variables
 uint8_t RxData[8];
-uint8_t RxData_Encrypted[8];  // New buffer for encrypted data
+uint8_t RxData_Encrypted[8];  // Buffer to store encrypted data
 uint8_t yPos = 0;
+uint8_t prevYPos = 0;         // For OLED visualization
 char msg[50];
 volatile uint8_t dataReceived = 0;
 
@@ -28,6 +31,22 @@ const uint32_t key[4] = {1, 2, 3, 4};
 
 // Buffer for encryption/decryption operations (2 uint32_t for 8 bytes)
 uint32_t data_buffer[2];
+
+/**
+ * @brief Converts binary data to a hexadecimal string.
+ *
+ * @param bin Pointer to the binary data.
+ * @param len Length of the binary data.
+ * @param hex_out Pointer to the output buffer (must be at least len*2 + 1 bytes).
+ */
+void bin_to_hex(uint8_t* bin, size_t len, char* hex_out) {
+    const char hex_chars[] = "0123456789ABCDEF";
+    for (size_t i = 0; i < len; i++) {
+        hex_out[i * 2] = hex_chars[(bin[i] >> 4) & 0x0F];
+        hex_out[i * 2 + 1] = hex_chars[bin[i] & 0x0F];
+    }
+    hex_out[len * 2] = '\0'; // Null-terminate the string
+}
 
 // Decryption Function
 void decrypt(uint32_t v[2], const uint32_t k[4]) {
@@ -64,6 +83,7 @@ void decryptMessage(uint8_t* input, size_t len) {
     memcpy(input, data_buffer, len);
 }
 
+// UART Reception Callback
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart == &huart1 && Size > 0) {
         // Store encrypted data first
@@ -79,13 +99,19 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        // Format and transmit debug message
+        // Format and transmit decrypted yPos value
         sprintf(msg, "yPos: %u\r\n", yPos);
 
         // Switch to transmit mode for debug output
         HAL_HalfDuplex_EnableTransmitter(&huart1);
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
         HAL_HalfDuplex_EnableReceiver(&huart1);
+
+        // Update OLED Display with decrypted yPos
+        SSD1306_ShiftBufferLeft();
+        SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+        SSD1306_UpdateScreen();
+        prevYPos = yPos;
     }
 }
 
@@ -98,9 +124,20 @@ int main(void) {
 
     // Initialize all configured peripherals
     MX_GPIO_Init();
+    MX_I2C1_Init();               // Initialize I2C1 for OLED
     MX_USART1_UART_Init();
 
-    // Initialize UART Reception in Half-Duplex Mode
+    // Initialize the SSD1306 OLED display
+    SSD1306_Init();
+
+    // Initialize yPos for OLED display
+    prevYPos = 0;  // Starting position
+
+    // Initialize OLED display with a clear screen
+    SSD1306_Clear();
+    SSD1306_UpdateScreen();
+
+    // Start UART Reception in Half-Duplex Mode
     HAL_HalfDuplex_EnableReceiver(&huart1);
     HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
@@ -112,6 +149,8 @@ int main(void) {
             // Optional: Add a small delay to prevent overwhelming the UART
             HAL_Delay(10);
         }
+
+        // Optional: Implement low-power modes or other tasks
     }
 }
 
@@ -126,6 +165,21 @@ static void MX_USART1_UART_Init(void) {
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
 
     if (HAL_HalfDuplex_Init(&huart1) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+static void MX_I2C1_Init(void) {
+    hi2c1.Instance = I2C1;
+    hi2c1.Init.ClockSpeed = 400000; // 400 kHz Fast Mode
+    hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+    hi2c1.Init.OwnAddress1 = 0;
+    hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+    hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    hi2c1.Init.OwnAddress2 = 0;
+    hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+    if(HAL_I2C_Init(&hi2c1)!= HAL_OK){
         Error_Handler();
     }
 }
