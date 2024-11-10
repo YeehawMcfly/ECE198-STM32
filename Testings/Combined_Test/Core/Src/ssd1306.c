@@ -655,3 +655,24 @@ void ssd1306_I2C_Write(uint8_t address, uint8_t reg, uint8_t data) {
 	dt[1] = data;
 	HAL_I2C_Master_Transmit(&hi2c1, address, dt, 2, 10);
 }
+
+void SSD1306_ShiftBufferLeft(void) {
+    for (uint8_t page = 0; page < SSD1306_HEIGHT / 8; page++) {
+        memmove(&SSD1306_Buffer[page * SSD1306_WIDTH],
+                &SSD1306_Buffer[page * SSD1306_WIDTH + 1],
+                SSD1306_WIDTH - 1);
+        SSD1306_Buffer[page * SSD1306_WIDTH + (SSD1306_WIDTH - 1)] = 0x00; // Clear the last column
+    }
+}
+
+void SSD1306_DrawVerticalLineInRightmostColumn(uint8_t y1, uint8_t y2, SSD1306_COLOR_t color) {
+    if (y1 > y2) {
+        uint8_t temp = y1;
+        y1 = y2;
+        y2 = temp;
+    }
+    for (uint8_t y = y1; y <= y2; y++) {
+        SSD1306_DrawPixel(SSD1306_WIDTH - 1, y, color);
+    }
+}
+

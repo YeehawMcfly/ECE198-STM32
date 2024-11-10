@@ -60,8 +60,8 @@ all: main-build
 main-build: Input_Test.elf secondary-outputs
 
 # Tool invocations
-Input_Test.elf Input_Test.map: $(OBJS) $(USER_OBJS) C:\Users\Eugene\Desktop\ECE198-STM32\Testings\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Input_Test.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Eugene\Desktop\ECE198-STM32\Testings\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Input_Test.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Input_Test.elf Input_Test.map: $(OBJS) $(USER_OBJS) C:\Users\Eugene\Desktop\ECE198-STM32\Testings\Input_Test\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Input_Test.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Eugene\Desktop\ECE198-STM32\Testings\Input_Test\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Input_Test.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

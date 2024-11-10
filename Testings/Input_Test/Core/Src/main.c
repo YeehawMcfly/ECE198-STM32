@@ -32,6 +32,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define VREF 3.3
+#define ADC_RESOLUTION 4095 // 12-bit ADC: 2^12 - 1 = 4095
+
 
 /* USER CODE END PD */
 
@@ -47,7 +50,7 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint16_t lux = 0;
-char msg[20];
+char msg[30];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,50 +73,31 @@ static void MX_USART2_UART_Init(void);
   */
 int main(void)
 {
+    /* Initialization code */
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+    MX_USART2_UART_Init();
 
-  /* USER CODE BEGIN 1 */
+    while (1)
+    {
+        /* Start ADC Conversion */
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+        lux = HAL_ADC_GetValue(&hadc1);
 
-  /* USER CODE END 1 */
+        /* Calculate Voltage */
+        float voltage = (lux * VREF) / ADC_RESOLUTION;
 
-  /* MCU Configuration--------------------------------------------------------*/
+        /* Prepare the message */
+        sprintf(msg, "Voltage: %.2f V\r\n", voltage);
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+        /* Transmit the message over UART */
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_ADC1_Init();
-  MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-	 HAL_ADC_Start(&hadc1);
-	 HAL_ADC_PollForConversion(&hadc1, 20);
-	 lux = HAL_ADC_GetValue(&hadc1);
-	 sprintf(msg, "Light: %hu \r\n", lux);
-	 HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-	 HAL_Delay(10);
-  }
-  /* USER CODE END 3 */
+        HAL_Delay(500); // Adjust delay as needed
+    }
 }
 
 /**

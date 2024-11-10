@@ -291,6 +291,8 @@ void SSD1306_Stopscroll(void);
 
 void SSD1306_InvertDisplay (int i);
 
+void SSD1306_ShiftBufferLeft(void);
+void SSD1306_DrawVerticalLineInRightmostColumn(uint8_t y1, uint8_t y2, SSD1306_COLOR_t color);
 
 
 
