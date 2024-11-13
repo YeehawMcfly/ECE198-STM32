@@ -27,6 +27,8 @@ uint8_t yPos = 0;
 uint8_t prevYPos = 0;
 char msg[50];
 volatile uint8_t dataReceived = 0;
+volatile uint8_t displayEncrypted = 0; // 0 for decrypted, 1 for encrypted
+
 
 // Encryption key - must be the same on both sender and receiver
 const uint32_t key[4] = {1, 2, 3, 4};
@@ -71,10 +73,10 @@ void decryptMessage(uint8_t* input, size_t len) {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart == &huart1 && Size > 0) {
-        // Store encrypted data first
+        // Store encrypted data
         memcpy(RxData_Encrypted, RxData, sizeof(RxData));
 
-        // Decrypt the received data
+        // Decrypt the received data for normal display
         decryptMessage(RxData, sizeof(RxData));
 
         // Extract yPos from decrypted data
@@ -84,7 +86,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        // Format and transmit decrypted yPos value
         sprintf(msg, "yPos: %u\r\n", yPos);
 
         // Switch to transmit mode for debug output
@@ -92,44 +93,64 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
         HAL_HalfDuplex_EnableReceiver(&huart1);
 
-        // Update OLED Display with decrypted yPos
-        SSD1306_ShiftBufferLeft();
-        SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-        SSD1306_UpdateScreen();
-        prevYPos = yPos;
+        // Update OLED Display based on display mode
+        if (displayEncrypted) {
+            displayEncryptedData(RxData_Encrypted, sizeof(RxData_Encrypted));
+        } else {
+            // Display decrypted yPos on the OLED
+            SSD1306_ShiftBufferLeft();
+            SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+            SSD1306_UpdateScreen();
+            prevYPos = yPos;
+        }
     }
 }
 
 
-int main(void)
-{
-  HAL_Init();
-  SystemClock_Config();
-  MX_GPIO_Init();
-  MX_I2C1_Init();
-  MX_USART1_UART_Init();
+void displayEncryptedData(uint8_t *data, size_t len) {
+    char buffer[17]; // Buffer for displaying characters, max 16 characters + null terminator
 
-  HAL_HalfDuplex_EnableReceiver(&huart1);
-  HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
+    for (size_t i = 0; i < len; i++) {
+        // Convert each byte to a value between 0 and 63
+        uint8_t displayValue = data[i] % 64;
 
+        // Convert to a printable character (e.g., ASCII 32-95 for visible characters)
+        buffer[i] = 32 + displayValue;
+    }
+    buffer[len] = '\0'; // Null-terminate the string
 
-  /* USER CODE BEGIN 2 */
-  SSD1306_Init();
-  SSD1306_Clear();
-  SSD1306_UpdateScreen();
-
-
-  while(1) {
-          if (dataReceived) {
-              // Process received data if needed
-              dataReceived = 0;
-
-              // Optional: Add a small delay to prevent overwhelming the UART
-              HAL_Delay(10);
-          }
-      }
-
+    // Clear the OLED and display the string
+    SSD1306_Clear();
+    SSD1306_GotoXY(0, 0); // Start at top-left corner
+    SSD1306_Puts(buffer, &Font_7x10, SSD1306_COLOR_WHITE); // Choose font as appropriate
+    SSD1306_UpdateScreen();
 }
+
+
+int main(void) {
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_I2C1_Init();
+    MX_USART1_UART_Init();
+
+    HAL_HalfDuplex_EnableReceiver(&huart1);
+    HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
+
+    SSD1306_Init();
+    SSD1306_Clear();
+    SSD1306_UpdateScreen();
+
+    while(1) {
+        if (dataReceived) {
+            dataReceived = 0; // Reset data received flag
+
+            // Optional: Add a small delay to prevent overwhelming the UART
+            HAL_Delay(10);
+        }
+    }
+}
+
 
 static void MX_USART1_UART_Init(void) {
     huart1.Instance = USART1;
@@ -153,10 +174,28 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  // Configure PC13 as Input with External Interrupt
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  // Enable interrupt in NVIC
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == GPIO_PIN_13) {
+        displayEncrypted = !displayEncrypted; // Toggle display mode
+    }
+}
+
 
 static void MX_I2C1_Init(void)
 {
