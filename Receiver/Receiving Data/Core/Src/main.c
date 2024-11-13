@@ -88,7 +88,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
         // Update OLED Display based on display mode
         if (displayEncrypted) {
-            displayRawRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Display raw encrypted data
+            displayAsciiRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Display raw encrypted data as ASCII
         } else {
             // Display decrypted yPos on the OLED
             SSD1306_ShiftBufferLeft();
@@ -100,21 +100,26 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 }
 
 
-void displayRawRxData(uint8_t *data, size_t len) {
-    char buffer[3 * 8 + 1]; // Each byte will be "XX " (3 chars), max 8 bytes, + null terminator
+void displayAsciiRxData(uint8_t *data, size_t len) {
+    char buffer[9]; // Max 8 characters for RxData + null terminator
 
     for (size_t i = 0; i < len; i++) {
-        // Format each byte as two hexadecimal characters
-        snprintf(&buffer[i * 3], 4, "%02X ", data[i]);
+        // Check if byte is a printable ASCII character
+        if (data[i] >= 32 && data[i] <= 126) {
+            buffer[i] = data[i]; // Directly use printable ASCII character
+        } else {
+            buffer[i] = '.'; // Replace non-printable characters with a dot
+        }
     }
-    buffer[3 * len] = '\0'; // Null-terminate the string
+    buffer[len] = '\0'; // Null-terminate the string
 
-    // Clear the OLED and display the raw data
+    // Clear the OLED and display the ASCII characters
     SSD1306_Clear();
     SSD1306_GotoXY(0, 0); // Start at top-left corner
     SSD1306_Puts(buffer, &Font_7x10, SSD1306_COLOR_WHITE); // Choose font as appropriate
     SSD1306_UpdateScreen();
 }
+
 
 
 
