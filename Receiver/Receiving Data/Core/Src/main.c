@@ -73,7 +73,7 @@ void decryptMessage(uint8_t* input, size_t len) {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (huart == &huart1 && Size > 0) {
-        // Store encrypted data
+        // Store the encrypted data
         memcpy(RxData_Encrypted, RxData, sizeof(RxData));
 
         // Decrypt the received data for normal display
@@ -86,16 +86,9 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
 
-        sprintf(msg, "yPos: %u\r\n", yPos);
-
-        // Switch to transmit mode for debug output
-        HAL_HalfDuplex_EnableTransmitter(&huart1);
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-        HAL_HalfDuplex_EnableReceiver(&huart1);
-
         // Update OLED Display based on display mode
         if (displayEncrypted) {
-            displayEncryptedData(RxData_Encrypted, sizeof(RxData_Encrypted));
+            displayRawRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Display raw encrypted data
         } else {
             // Display decrypted yPos on the OLED
             SSD1306_ShiftBufferLeft();
@@ -107,24 +100,22 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 }
 
 
-void displayEncryptedData(uint8_t *data, size_t len) {
-    char buffer[17]; // Buffer for displaying characters, max 16 characters + null terminator
+void displayRawRxData(uint8_t *data, size_t len) {
+    char buffer[3 * 8 + 1]; // Each byte will be "XX " (3 chars), max 8 bytes, + null terminator
 
     for (size_t i = 0; i < len; i++) {
-        // Convert each byte to a value between 0 and 63
-        uint8_t displayValue = data[i] % 64;
-
-        // Convert to a printable character (e.g., ASCII 32-95 for visible characters)
-        buffer[i] = 32 + displayValue;
+        // Format each byte as two hexadecimal characters
+        snprintf(&buffer[i * 3], 4, "%02X ", data[i]);
     }
-    buffer[len] = '\0'; // Null-terminate the string
+    buffer[3 * len] = '\0'; // Null-terminate the string
 
-    // Clear the OLED and display the string
+    // Clear the OLED and display the raw data
     SSD1306_Clear();
     SSD1306_GotoXY(0, 0); // Start at top-left corner
     SSD1306_Puts(buffer, &Font_7x10, SSD1306_COLOR_WHITE); // Choose font as appropriate
     SSD1306_UpdateScreen();
 }
+
 
 
 int main(void) {
