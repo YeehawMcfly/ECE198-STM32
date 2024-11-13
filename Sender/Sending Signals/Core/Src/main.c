@@ -130,7 +130,6 @@ int main(void) {
             // Poll for ADC Conversion completion
             if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
                 uint16_t adcValue = HAL_ADC_GetValue(&hadc1);
-
                 // Calculate yPos based on ADC value
                 yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
 

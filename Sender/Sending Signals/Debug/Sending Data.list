@@ -659,7 +659,6 @@ int main(void) {
  80006b4:	f000 ffb3 	bl	800161e <HAL_ADC_GetValue>
  80006b8:	4603      	mov	r3, r0
  80006ba:	80bb      	strh	r3, [r7, #4]
-
                 // Calculate yPos based on ADC value
                 yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
  80006bc:	88bb      	ldrh	r3, [r7, #4]
