@@ -100,20 +100,27 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 }
 
 
-void displayAsciiRxData(uint8_t *data, size_t len) {
-    char buffer[9]; // Max 8 characters for RxData + null terminator
+void displayDecimalRxData(uint8_t *data, size_t len) {
+    char buffer[4 * 8 + 3]; // Each byte up to 3 digits + ", " + brackets and null terminator
+
+    buffer[0] = '['; // Start with an opening bracket
+    size_t pos = 1;
 
     for (size_t i = 0; i < len; i++) {
-        // Check if byte is a printable ASCII character
-        if (data[i] >= 32 && data[i] <= 126) {
-            buffer[i] = data[i]; // Directly use printable ASCII character
-        } else {
-            buffer[i] = '.'; // Replace non-printable characters with a dot
+        // Format each byte as a decimal number and add to buffer
+        pos += snprintf(&buffer[pos], 5, "%u", data[i]);
+
+        // Add comma and space if it's not the last element
+        if (i < len - 1) {
+            buffer[pos++] = ',';
+            buffer[pos++] = ' ';
         }
     }
-    buffer[len] = '\0'; // Null-terminate the string
 
-    // Clear the OLED and display the ASCII characters
+    buffer[pos++] = ']'; // Closing bracket
+    buffer[pos] = '\0';   // Null-terminate the string
+
+    // Clear the OLED and display the formatted string
     SSD1306_Clear();
     SSD1306_GotoXY(0, 0); // Start at top-left corner
     SSD1306_Puts(buffer, &Font_7x10, SSD1306_COLOR_WHITE); // Choose font as appropriate
@@ -141,11 +148,23 @@ int main(void) {
         if (dataReceived) {
             dataReceived = 0; // Reset data received flag
 
-            // Optional: Add a small delay to prevent overwhelming the UART
-            HAL_Delay(10);
+            // Update OLED Display based on display mode
+            if (displayEncrypted) {
+                displayDecimalRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Show raw data as decimal
+            } else {
+                // Show yPos as a line graph
+                SSD1306_ShiftBufferLeft();
+                SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+                SSD1306_UpdateScreen();
+                prevYPos = yPos;
+            }
+
+            // Optional delay to debounce button presses and prevent rapid toggling
+            HAL_Delay(50);
         }
     }
 }
+
 
 
 static void MX_USART1_UART_Init(void) {
@@ -189,6 +208,7 @@ static void MX_GPIO_Init(void)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     if (GPIO_Pin == GPIO_PIN_13) {
         displayEncrypted = !displayEncrypted; // Toggle display mode
+        dataReceived = 1; // Trigger display update
     }
 }
 
