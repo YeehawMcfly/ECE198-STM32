@@ -85,19 +85,9 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
         // Re-enable reception before processing
         HAL_UARTEx_ReceiveToIdle_IT(&huart1, RxData, sizeof(RxData));
-
-        // Update OLED Display based on display mode
-        if (displayEncrypted) {
-            displayDecimalRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Display raw encrypted data as ASCII
-        } else {
-            // Display decrypted yPos on the OLED
-            SSD1306_ShiftBufferLeft();
-            SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-            SSD1306_UpdateScreen();
-            prevYPos = yPos;
-        }
     }
 }
+
 
 
 void displayDecimalRxData(uint8_t *data, size_t len) {
@@ -163,21 +153,23 @@ int main(void) {
     while (1) {
         if (dataReceived) {
             dataReceived = 0; // Reset the flag
-
-            if (displayEncrypted) {
-                displayDecimalRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Show raw RxData
-            } else {
-                SSD1306_ShiftBufferLeft();
-                SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-                SSD1306_UpdateScreen();
-                prevYPos = yPos;
-            }
-
-            HAL_Delay(50); // Optional delay to debounce button presses
         }
-    }
 
-}
+        if (displayEncrypted) {
+            // Dynamically display raw encrypted data
+            displayDecimalRxData(RxData_Encrypted, sizeof(RxData_Encrypted));
+        } else {
+            // Display decrypted yPos graph
+            SSD1306_ShiftBufferLeft();
+            SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+            SSD1306_UpdateScreen();
+            prevYPos = yPos;
+        }
+
+        HAL_Delay(100); // Adjust delay as needed for smooth updates
+
+
+
 
 
 
