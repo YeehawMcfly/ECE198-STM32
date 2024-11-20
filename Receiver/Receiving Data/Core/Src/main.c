@@ -88,7 +88,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
         // Update OLED Display based on display mode
         if (displayEncrypted) {
-            displayAsciiRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Display raw encrypted data as ASCII
+            displayDecimalRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Display raw encrypted data as ASCII
         } else {
             // Display decrypted yPos on the OLED
             SSD1306_ShiftBufferLeft();
@@ -128,8 +128,6 @@ void displayDecimalRxData(uint8_t *data, size_t len) {
 }
 
 
-
-
 int main(void) {
     HAL_Init();
     SystemClock_Config();
@@ -144,25 +142,23 @@ int main(void) {
     SSD1306_Clear();
     SSD1306_UpdateScreen();
 
-    while(1) {
+    while (1) {
         if (dataReceived) {
-            dataReceived = 0; // Reset data received flag
+            dataReceived = 0; // Reset the flag
 
-            // Update OLED Display based on display mode
             if (displayEncrypted) {
-                displayDecimalRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Show raw data as decimal
+                displayDecimalRxData(RxData_Encrypted, sizeof(RxData_Encrypted)); // Show raw RxData
             } else {
-                // Show yPos as a line graph
                 SSD1306_ShiftBufferLeft();
                 SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
                 SSD1306_UpdateScreen();
                 prevYPos = yPos;
             }
 
-            // Optional delay to debounce button presses and prevent rapid toggling
-            HAL_Delay(50);
+            HAL_Delay(50); // Optional delay to debounce button presses
         }
     }
+
 }
 
 
@@ -208,9 +204,10 @@ static void MX_GPIO_Init(void)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     if (GPIO_Pin == GPIO_PIN_13) {
         displayEncrypted = !displayEncrypted; // Toggle display mode
-        dataReceived = 1; // Trigger display update
+        dataReceived = 1;                     // Trigger display update
     }
 }
+
 
 
 static void MX_I2C1_Init(void)
