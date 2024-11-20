@@ -91,6 +91,19 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 
 void displayDecimalRxData(uint8_t *data, size_t len) {
+    static uint8_t prevData[8]; // Store previously displayed data
+    static uint8_t firstRun = 1; // Ensure the display updates initially
+
+    // Check if the new data is the same as the previous data
+    if (!firstRun && memcmp(data, prevData, len) == 0) {
+        // No change in data, skip the display update
+        return;
+    }
+
+    // Update the previous data buffer
+    memcpy(prevData, data, len);
+    firstRun = 0; // After the first run, updates will only occur on changes
+
     char buffer[4 * 8 + 3]; // Each byte up to 3 digits + ", " + brackets and null terminator
 
     buffer[0] = '['; // Start with an opening bracket
@@ -110,8 +123,8 @@ void displayDecimalRxData(uint8_t *data, size_t len) {
     buffer[pos++] = ']'; // Closing bracket
     buffer[pos] = '\0';   // Null-terminate the string
 
-    // Display the string on the OLED with line wrapping
-    SSD1306_Clear();
+    // Clear the OLED and display the formatted string
+    SSD1306_Clear(); // Clear only when data changes
 
     // Line-by-line display
     size_t start = 0;
@@ -131,8 +144,9 @@ void displayDecimalRxData(uint8_t *data, size_t len) {
         line++;
     }
 
-    SSD1306_UpdateScreen();
+    SSD1306_UpdateScreen(); // Update the screen only when data changes
 }
+
 
 
 
@@ -166,11 +180,9 @@ int main(void) {
             prevYPos = yPos;
         }
 
-        HAL_Delay(100); // Adjust delay as needed for smooth updates
-
-
-
-
+        HAL_Delay(1); // Adjust delay as needed for smooth updates
+    }
+}
 
 
 static void MX_USART1_UART_Init(void) {
