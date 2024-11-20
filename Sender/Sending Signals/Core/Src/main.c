@@ -27,6 +27,9 @@ uint8_t TxData[8] = {0};
 uint8_t yPos = 0;
 uint8_t prevYPos = 0;
 volatile uint8_t transmissionComplete = 1;
+volatile uint8_t displayVoltage = 0; // 0 for graph view, 1 for voltage view
+float prevVoltage = -1.0f;           // Store previously displayed voltage
+
 
 // Encryption key - must be the same on both sender and receiver
 const uint32_t key[4] = {1, 2, 3, 4};
@@ -122,42 +125,59 @@ int main(void) {
         prevYPos = yPos;
     }
 
-    while(1) {
+    while (1) {
         if (transmissionComplete) {
-            // Start ADC Conversion
             HAL_ADC_Start(&hadc1);
 
-            // Poll for ADC Conversion completion
             if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
                 uint16_t adcValue = HAL_ADC_GetValue(&hadc1);
-                // Calculate yPos based on ADC value
+                float lux = adcValue; // Use ADC value as 'lux'
+                float VREF = 3.3f;    // Reference voltage
+                float ADC_RESOLUTION = 4095.0f; // 12-bit ADC resolution
+                float voltage = (lux * VREF) / ADC_RESOLUTION;
+                float epsilon = 0.01f; // Threshold for voltage change
                 yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
 
-                // Update OLED Display
-                SSD1306_ShiftBufferLeft();
-                SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
-                SSD1306_UpdateScreen();
-                prevYPos = yPos;
+                if (displayVoltage) {
+                    // Display Voltage
+                	static uint8_t prevYPosDisplayed = 0xFF;
 
-                // Clear buffer and prepare data
+                	if (yPos != prevYPosDisplayed) {         // Only update if the yPos changes
+						prevYPosDisplayed = yPos;
+
+						// Format yPos for display
+						char yPosStr[16];
+						snprintf(yPosStr, sizeof(yPosStr), "yPos: %u", yPos);
+
+						// Update OLED Display
+						SSD1306_Clear(); // Clear screen only when necessary
+						SSD1306_GotoXY(0, 0);
+						SSD1306_Puts(yPosStr, &Font_7x10, SSD1306_COLOR_WHITE);
+						SSD1306_UpdateScreen();
+					}
+                } else {
+                    SSD1306_ShiftBufferLeft();
+                    SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
+                    SSD1306_UpdateScreen();
+                    prevYPos = yPos;
+                }
+
+                // Transmit Data (Always Transmit Regardless of Display Mode)
                 memset(TxData, 0, sizeof(TxData));
                 TxData[0] = yPos;
 
                 // Encrypt the TxData before transmission
                 encryptMessage(TxData, sizeof(TxData));
-
-                // Switch to transmit mode and send data
                 HAL_HalfDuplex_EnableTransmitter(&huart1);
                 transmissionComplete = 0;
                 HAL_UART_Transmit_IT(&huart1, TxData, sizeof(TxData));
-
-                // No need to wait here; the callback will set transmissionComplete
             }
         }
 
-        // Optionally, add other tasks or put the MCU to sleep to save power
-        HAL_Delay(1); // Minimal delay to prevent watchdog reset if enabled
+        HAL_Delay(1); // Minimal delay to prevent watchdog reset
     }
+
+
 }
 
 static void MX_USART1_UART_Init(void) {
@@ -194,6 +214,13 @@ static void MX_GPIO_Init(void){
     HAL_NVIC_SetPriority(EXTI15_10_IRQn,0,0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == GPIO_PIN_13) {
+        displayVoltage = !displayVoltage; // Toggle display mode
+    }
+}
+
 
 void SystemClock_Config(void){
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};

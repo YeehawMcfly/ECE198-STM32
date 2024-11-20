@@ -88,7 +88,7 @@ int main(void)
         lux = HAL_ADC_GetValue(&hadc1);
 
         /* Calculate Voltage */
-        float voltage = (lux * VREF) / ADC_RESOLUTION;
+        the curre
 
         /* Prepare the message */
         sprintf(msg, "Voltage: %.2f V\r\n", voltage);
