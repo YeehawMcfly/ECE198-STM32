@@ -120,12 +120,30 @@ void displayDecimalRxData(uint8_t *data, size_t len) {
     buffer[pos++] = ']'; // Closing bracket
     buffer[pos] = '\0';   // Null-terminate the string
 
-    // Clear the OLED and display the formatted string
+    // Display the string on the OLED with line wrapping
     SSD1306_Clear();
-    SSD1306_GotoXY(0, 0); // Start at top-left corner
-    SSD1306_Puts(buffer, &Font_7x10, SSD1306_COLOR_WHITE); // Choose font as appropriate
+
+    // Line-by-line display
+    size_t start = 0;
+    size_t max_chars_per_line = 16; // Adjust based on your OLED width and font size
+    size_t line = 0;
+
+    while (start < pos) {
+        char line_buffer[17]; // Holds one line of text (16 characters + null terminator)
+        strncpy(line_buffer, &buffer[start], max_chars_per_line);
+        line_buffer[max_chars_per_line] = '\0'; // Ensure null-terminated string
+
+        // Display the line on the OLED
+        SSD1306_GotoXY(0, line * 10); // Adjust line height (10 pixels for Font_7x10)
+        SSD1306_Puts(line_buffer, &Font_7x10, SSD1306_COLOR_WHITE);
+
+        start += max_chars_per_line;
+        line++;
+    }
+
     SSD1306_UpdateScreen();
 }
+
 
 
 int main(void) {
