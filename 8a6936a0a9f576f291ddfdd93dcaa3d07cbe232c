@@ -1,1 +1,3 @@
-We added our Encrypt and Decrypt functions here for the first time
+We added our Encrypt and Decrypt functions here for the first time.
+
+The implemented encryption and decryption functions were based on the TEA (Tiny Encryption Algorithm). It worked by taking plaintext and a key, then applying bitwise operations (shifting, addition, and XOR) iteratively to produce ciphertext. Similarly, the decryption function reverses this process to recover the plaintext. We did these in 2 different functions for modularity.
