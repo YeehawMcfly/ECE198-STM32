@@ -139,22 +139,21 @@ int main(void) {
                 yPos = SSD1306_HEIGHT - 1 - ((adcValue * (SSD1306_HEIGHT - 1)) / 4095);
 
                 if (displayVoltage) {
-                    // Display Voltage
-                	static uint8_t prevYPosDisplayed = 0xFF;
+                    // Display Voltage and yPos
+                    char voltageStr[16];
+                    char yPosStr[16];
 
-                	if (yPos != prevYPosDisplayed) {         // Only update if the yPos changes
-						prevYPosDisplayed = yPos;
+                    // Format the voltage and yPos values
+                    snprintf(voltageStr, sizeof(voltageStr), "Voltage: %.2fV", voltage);
+                    snprintf(yPosStr, sizeof(yPosStr), "yPos: %u", yPos);
 
-						// Format yPos for display
-						char yPosStr[16];
-						snprintf(yPosStr, sizeof(yPosStr), "yPos: %u", yPos);
-
-						// Update OLED Display
-						SSD1306_Clear(); // Clear screen only when necessary
-						SSD1306_GotoXY(0, 0);
-						SSD1306_Puts(yPosStr, &Font_7x10, SSD1306_COLOR_WHITE);
-						SSD1306_UpdateScreen();
-					}
+                    // Update OLED Display
+                    SSD1306_Clear(); // Clear screen only when necessary
+                    SSD1306_GotoXY(0, 0);
+                    SSD1306_Puts(voltageStr, &Font_7x10, SSD1306_COLOR_WHITE);
+                    SSD1306_GotoXY(0, 12); // Move to the next line
+                    SSD1306_Puts(yPosStr, &Font_7x10, SSD1306_COLOR_WHITE);
+                    SSD1306_UpdateScreen();
                 } else {
                     SSD1306_ShiftBufferLeft();
                     SSD1306_DrawVerticalLineInRightmostColumn(prevYPos, yPos, SSD1306_COLOR_WHITE);
