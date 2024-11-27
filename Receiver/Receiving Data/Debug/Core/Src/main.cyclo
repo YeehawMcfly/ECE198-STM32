@@ -1,0 +1,9 @@
+../Core/Src/main.c:38:6:decrypt	2
+../Core/Src/main.c:52:6:decryptMessage	3
+../Core/Src/main.c:72:6:HAL_UARTEx_RxEventCallback	3
+../Core/Src/main.c:104:5:main	2
+../Core/Src/main.c:134:13:MX_USART1_UART_Init	2
+../Core/Src/main.c:150:13:MX_GPIO_Init	1
+../Core/Src/main.c:162:13:MX_I2C1_Init	2
+../Core/Src/main.c:191:6:SystemClock_Config	3
+../Core/Src/main.c:225:6:Error_Handler	1
