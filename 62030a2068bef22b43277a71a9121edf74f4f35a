@@ -1,0 +1,1 @@
+Removed the button and the code referencing to it. We then added code that allowed this to continuously send signals without the push of a button. This was of course 1 way communication (half-duplex). We added an OLED and ADC variable resistor to the main code and aligning their transmission data size.
